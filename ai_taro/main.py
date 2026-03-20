@@ -1,5 +1,5 @@
 """
-AIコメント太郎 v3.16 - メインコントローラー
+AIコメント太郎 v3.17 - メインコントローラー
 配信中に音声を認識し、自然な日本語コメントを自動投稿するbotです。
 音声認識: Google Web Speech API（高精度・無料）
 コメント生成: Gemini API（gemini-1.5-flash・無料枠あり）
@@ -21,13 +21,14 @@ from screen_module import ScreenModule
 
 
 def setup_logging():
-    """ロギングの設定"""
+    """ロギングの設定。起動のたびにログファイルを上書き（1配信分のみ保持）"""
     log_format = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
     log_level = getattr(logging, cfg.LOG_LEVEL, logging.INFO)
 
     handlers = [logging.StreamHandler(sys.stdout)]
     if cfg.LOG_FILE:
-        handlers.append(logging.FileHandler(cfg.LOG_FILE, encoding="utf-8"))
+        # mode='w' で起動のたびに上書き（前回のログは消える）
+        handlers.append(logging.FileHandler(cfg.LOG_FILE, encoding="utf-8", mode='w'))
 
     logging.basicConfig(
         level=log_level,
@@ -41,7 +42,7 @@ logger = logging.getLogger(__name__)
 
 class TwitchAIBot:
     """
-    AIコメント太郎 v3.16のメインコントローラー。
+    AIコメント太郎 v3.17のメインコントローラー。
     各モジュールを統合し、タイミング制御を行います。
     """
 
@@ -182,7 +183,7 @@ class TwitchAIBot:
     def start(self):
         """botを起動する"""
         logger.info("=" * 60)
-        logger.info("AIコメント太郎 v3.16 を起動します")
+        logger.info("AIコメント太郎 v3.17 を起動します")
         logger.info(f"チャンネル: #{cfg.CHANNEL_NAME}")
         logger.info(f"音声認識: Google Web Speech API（日本語）")
         logger.info(f"コメント生成: Gemini API ({cfg.GEMINI_MODEL})")
