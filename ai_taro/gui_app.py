@@ -1,5 +1,5 @@
 """
-AIコメント太郎 - GUI管理アプリ v3.19
+AIコメント太郎 - GUI管理アプリ v3.20
 tkinterを使ったデスクトップGUIアプリです。
 このファイルを実行するとGUIが起動します: python gui_app.py
 """
@@ -26,7 +26,7 @@ class QueueHandler(logging.Handler):
 class BotGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("AIコメント太郎 v3.19")
+        self.root.title("AIコメント太郎 v3.20")
         self.root.geometry("820x660")
         self.root.resizable(True, True)
         self.root.configure(bg="#1a1a2e")
@@ -121,7 +121,7 @@ class BotGUI:
         header = tk.Frame(self.root, bg=self.colors["bg"], pady=10)
         header.pack(fill="x", padx=16)
 
-        tk.Label(header, text="🎮  AIコメント太郎  v3.19",
+        tk.Label(header, text="🎮  AIコメント太郎  v3.20",
                  bg=self.colors["bg"], fg=self.colors["text"],
                  font=("Segoe UI", 16, "bold")).pack(side="left")
 
@@ -681,7 +681,7 @@ class BotGUI:
 
             logger = logging.getLogger("gui_bot")
             logger.info("=" * 50)
-            logger.info("AIコメント太郎 v3.19 を起動します")
+            logger.info("AIコメント太郎 v3.20 を起動します")
             logger.info(f"チャンネル: #{config.CHANNEL_NAME}")
             logger.info(f"音声認識: Google Web Speech API（日本語）")
             logger.info(f"コメント生成: Gemini API ({config.GEMINI_MODEL})")
@@ -970,12 +970,26 @@ class BotGUI:
                 self._append_log(f"✅ スクリーンショット取得成功 ({len(image_bytes)//1024}KB)", "INFO")
                 self._append_log("🔍 Gemini APIで解析中...", "INFO")
 
-                # 解析
-                description = screen._analyze_screenshot(image_bytes)
-                if description:
-                    self._append_log(f"✅ 画面認識結果: {description}", "INFO")
-                else:
-                    self._append_log("❌ 画面認識失敗（空レスポンスまたはスキップ判定）", "WARNING")
+                # 解析（生のレスポンスも確認するため直接呼び出し）
+                try:
+                    model = screen._get_gemini_vision_model()
+                    if model is None:
+                        self._append_log("❌ Gemini Visionモデルの初期化失敗。APIキーを確認してください。", "ERROR")
+                        return
+                    import base64
+                    import google.generativeai as genai
+                    game_title = getattr(config, 'GAME_TITLE', '') or 'ゲーム配信'
+                    prompt = f"これは{game_title}のゲーム配信画面です。画面に何が映っているか日本語で説明してください。"
+                    response = model.generate_content([
+                        prompt,
+                        {"mime_type": "image/jpeg", "data": base64.b64encode(image_bytes).decode("utf-8")}
+                    ])
+                    if response and response.text:
+                        self._append_log(f"✅ Gemini生レスポンス: {response.text[:200]}", "INFO")
+                    else:
+                        self._append_log(f"❌ Geminiレスポンス空。安全フィルターに引っかかっている可能性があります。feedback: {getattr(response, 'prompt_feedback', '不明')}", "WARNING")
+                except Exception as e:
+                    self._append_log(f"❌ Gemini呼び出しエラー: {e}", "ERROR")
 
             except Exception as e:
                 self._append_log(f"❌ テストエラー: {e}", "ERROR")

@@ -262,12 +262,11 @@ class ScreenModule:
 
             # スキップシーンリスト（JSONまたはデフォルト）
             skip_scenes = gc.get('skip_scenes') or [
-                "ロード中・ロード画面",
-                "ロビー・マッチング待ち・試合開始前",
+                "ロード中・ロード画面（真っ黒・真っ白・プログレスバーのみ）",
+                "ロビー・マッチング待ち・試合開始前の待機画面",
                 "観戦中・スペクテイター画面",
-                "メニュー画面・設定画面",
+                "設定画面・オプション画面",
                 "試合終了後のリザルト画面",
-                "ゲーム画面が表示されていない",
             ]
             skip_lines = "\n".join(f"- {s}" for s in skip_scenes)
 
@@ -289,10 +288,10 @@ class ScreenModule:
 {map_section}
 上記に該当しない場合のみ、現在の状況を日本語で2〜3文で説明してください。{ui_section}{hint_section}
 【注目してほしい情報】
-- プレイヤーのHP・シールド量
-- 残り人数・キル数（表示があれば）
-- 今の状況：戦闘中／建築中／移動中／ストームに追われている など
-- 武器・アイテム（見えるもの）
+- 今何のゲームをプレイしているか（画面から判断）
+- プレイヤーの現在の状況（HP・点数・スコア・残り時間など見えるもの）
+- 今何が起きているか（戦闘中・移動中・ターン待ち・上がり・ミッション中など）
+- 画面に表示されているテキスト情報（役名・ミッション名・スコアなど）
 
 必ず日本語のみで答えてください。"""
 
@@ -306,12 +305,17 @@ class ScreenModule:
 
                 # スキップ判定
                 if description.startswith("スキップ"):
-                    logger.info(f"[画面認識] スキップ: {description}")
+                    logger.info(f"[画面認識] スキップ判定: {description}")
                     return None
 
                 logger.info(f"画面状況: {description[:100]}...")
                 return description
 
+            # レスポンスが空の場合は詳細をログに出す
+            if response:
+                logger.warning(f"[画面認識] Geminiからレスポンスが返りましたがテキストが空です。finish_reason: {getattr(response, 'prompt_feedback', '不明')}")
+            else:
+                logger.warning("[画面認識] Geminiからレスポンスなし（None）")
             return None
 
         except Exception as e:
