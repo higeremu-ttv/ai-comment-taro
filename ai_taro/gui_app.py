@@ -1,5 +1,5 @@
 """
-AIコメント太郎 - GUI管理アプリ v3.17
+AIコメント太郎 - GUI管理アプリ v3.18
 tkinterを使ったデスクトップGUIアプリです。
 このファイルを実行するとGUIが起動します: python gui_app.py
 """
@@ -26,7 +26,7 @@ class QueueHandler(logging.Handler):
 class BotGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("AIコメント太郎 v3.17")
+        self.root.title("AIコメント太郎 v3.18")
         self.root.geometry("820x660")
         self.root.resizable(True, True)
         self.root.configure(bg="#1a1a2e")
@@ -121,7 +121,7 @@ class BotGUI:
         header = tk.Frame(self.root, bg=self.colors["bg"], pady=10)
         header.pack(fill="x", padx=16)
 
-        tk.Label(header, text="🎮  AIコメント太郎  v3.17",
+        tk.Label(header, text="🎮  AIコメント太郎  v3.18",
                  bg=self.colors["bg"], fg=self.colors["text"],
                  font=("Segoe UI", 16, "bold")).pack(side="left")
 
@@ -399,10 +399,18 @@ class BotGUI:
         tk.Label(game_row, text="配信ゲームタイトル", width=26, anchor="w",
                  bg=self.colors["panel"], fg=self.colors["text"],
                  font=("Segoe UI", 10)).pack(side="left")
+        style = ttk.Style()
+        style.configure("Dark.TCombobox",
+                        fieldbackground=self.colors["panel"],
+                        background=self.colors["panel"],
+                        foreground=self.colors["text"],
+                        selectbackground=self.colors["accent"],
+                        selectforeground="white")
         game_combo = ttk.Combobox(
             game_row, textvariable=self.var_game_title,
             values=game_titles,
-            state="normal", font=("Segoe UI", 10), width=30
+            state="normal", font=("Segoe UI", 10), width=30,
+            style="Dark.TCombobox"
         )
         game_combo.pack(side="left", fill="x", expand=True)
         make_note(sec_screen, "games/フォルダのJSONから自動読み込み。「なし（自動判断）」は汎用プロンプトを使用。")
@@ -522,9 +530,12 @@ class BotGUI:
             self._append_log(f"設定の読み込みに失敗しました: {e}", "ERROR")
 
     def save_settings(self):
-        """設定をconfig.pyに書き込む"""
+        """設定をconfig.pyとsecrets.pyに書き込む"""
         try:
-            config_path = os.path.join(os.path.dirname(__file__), "config.py")
+            base_dir = os.path.dirname(__file__)
+            config_path = os.path.join(base_dir, "config.py")
+            secrets_path = os.path.join(base_dir, "secrets.py")
+
             with open(config_path, "r", encoding="utf-8") as f:
                 content = f.read()
 
@@ -538,11 +549,6 @@ class BotGUI:
                     replacement = rf'\g<1>{new_value}'
                 return re.sub(pattern, replacement, text, flags=re.MULTILINE)
 
-            content = replace_value(content, "BOT_NICK", self.var_bot_nick.get())
-            content = replace_value(content, "BOT_TOKEN", self.var_bot_token.get())
-            content = replace_value(content, "CHANNEL_NAME", self.var_channel.get())
-            content = replace_value(content, "GEMINI_API_KEY", self.var_gemini_api_key.get())
-            content = replace_value(content, "GEMINI_MODEL", self.var_gemini_model.get())
             content = replace_value(content, "SPEECH_MIN_LENGTH",
                                     self.var_speech_min_length.get(), is_string=False)
             content = replace_value(content, "COMMENT_COOLDOWN_SECONDS",
@@ -557,9 +563,6 @@ class BotGUI:
                                     str(self.var_screen_enabled.get()), is_string=False)
             content = replace_value(content, "SCREEN_CAPTURE_INTERVAL",
                                     self.var_screen_interval.get(), is_string=False)
-            content = replace_value(content, "GAME_TITLE", self.var_game_title.get())
-            content = replace_value(content, "SCREEN_MONITOR_INDEX",
-                                    self.var_monitor_index.get(), is_string=False)
             content = replace_value(content, "COMMENT_RETRY_COUNT",
                                     self.var_retry_count.get(), is_string=False)
             content = replace_value(content, "COMMENT_RETRY_INTERVAL",
@@ -572,16 +575,10 @@ class BotGUI:
                                     self.var_chat_window.get(), is_string=False)
             content = replace_value(content, "CHAT_QUIET_RESUME_SECONDS",
                                     self.var_chat_quiet.get(), is_string=False)
-            content = replace_value(content, "EXCLUDED_ACCOUNTS",
-                                    self.var_excluded_accounts.get())
-            content = replace_value(content, "AI_NAME",
-                                    self.var_ai_name.get())
             content = replace_value(content, "COMMENT_MAX_TOKENS",
                                     self.var_comment_max_tokens.get(), is_string=False)
             content = replace_value(content, "VIEWER_COMMANDS_ENABLED",
                                     str(self.var_viewer_commands_enabled.get()), is_string=False)
-            content = replace_value(content, "VIEWER_COMMAND_PREFIX",
-                                    self.var_viewer_command_prefix.get())
             content = replace_value(content, "COMMAND_HELLO_ENABLED",
                                     str(self.var_command_hello_enabled.get()), is_string=False)
             content = replace_value(content, "COMMAND_STATUS_ENABLED",
@@ -589,6 +586,25 @@ class BotGUI:
 
             with open(config_path, "w", encoding="utf-8") as f:
                 f.write(content)
+
+            # 個人設定はsecrets.pyに保存
+            if os.path.exists(secrets_path):
+                with open(secrets_path, "r", encoding="utf-8") as f:
+                    secrets_content = f.read()
+
+                secrets_content = replace_value(secrets_content, "BOT_NICK", self.var_bot_nick.get())
+                secrets_content = replace_value(secrets_content, "BOT_TOKEN", self.var_bot_token.get())
+                secrets_content = replace_value(secrets_content, "CHANNEL_NAME", self.var_channel.get())
+                secrets_content = replace_value(secrets_content, "GEMINI_API_KEY", self.var_gemini_api_key.get())
+                secrets_content = replace_value(secrets_content, "AI_NAME", self.var_ai_name.get())
+                secrets_content = replace_value(secrets_content, "VIEWER_COMMAND_PREFIX", self.var_viewer_command_prefix.get())
+                secrets_content = replace_value(secrets_content, "EXCLUDED_ACCOUNTS", self.var_excluded_accounts.get())
+                secrets_content = replace_value(secrets_content, "GAME_TITLE", self.var_game_title.get())
+                secrets_content = replace_value(secrets_content, "SCREEN_MONITOR_INDEX",
+                                                self.var_monitor_index.get(), is_string=False)
+
+                with open(secrets_path, "w", encoding="utf-8") as f:
+                    f.write(secrets_content)
 
             messagebox.showinfo("保存完了", "設定を保存しました。\n変更を反映するにはBotを再起動してください。")
         except Exception as e:
@@ -654,7 +670,7 @@ class BotGUI:
 
             logger = logging.getLogger("gui_bot")
             logger.info("=" * 50)
-            logger.info("AIコメント太郎 v3.17 を起動します")
+            logger.info("AIコメント太郎 v3.18 を起動します")
             logger.info(f"チャンネル: #{config.CHANNEL_NAME}")
             logger.info(f"音声認識: Google Web Speech API（日本語）")
             logger.info(f"コメント生成: Gemini API ({config.GEMINI_MODEL})")
