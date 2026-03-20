@@ -1,0 +1,26 @@
+# 認証情報（絶対にコミットしない）
+secrets.py
+
+# Pythonキャッシュ
+__pycache__/
+*.py[cod]
+*.pyo
+
+# ログファイル
+*.log
+
+# Windows
+Thumbs.db
+desktop.ini
+
+# macOS
+.DS_Store
+
+# エディタ設定
+.vscode/
+.idea/
+
+# 仮想環境
+venv/
+env/
+.env
