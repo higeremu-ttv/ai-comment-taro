@@ -1,5 +1,5 @@
 """
-AIコメント太郎 - GUI管理アプリ v3.18
+AIコメント太郎 - GUI管理アプリ v3.19
 tkinterを使ったデスクトップGUIアプリです。
 このファイルを実行するとGUIが起動します: python gui_app.py
 """
@@ -26,7 +26,7 @@ class QueueHandler(logging.Handler):
 class BotGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("AIコメント太郎 v3.18")
+        self.root.title("AIコメント太郎 v3.19")
         self.root.geometry("820x660")
         self.root.resizable(True, True)
         self.root.configure(bg="#1a1a2e")
@@ -121,7 +121,7 @@ class BotGUI:
         header = tk.Frame(self.root, bg=self.colors["bg"], pady=10)
         header.pack(fill="x", padx=16)
 
-        tk.Label(header, text="🎮  AIコメント太郎  v3.18",
+        tk.Label(header, text="🎮  AIコメント太郎  v3.19",
                  bg=self.colors["bg"], fg=self.colors["text"],
                  font=("Segoe UI", 16, "bold")).pack(side="left")
 
@@ -191,7 +191,18 @@ class BotGUI:
             cursor="hand2",
             command=self.clear_log
         )
-        clear_btn.pack(side="left")
+        clear_btn.pack(side="left", padx=(0, 8))
+
+        # 画面テストボタン
+        screen_test_btn = tk.Button(
+            btn_frame, text="📷  画面テスト",
+            bg=self.colors["success"], fg="white",
+            font=("Segoe UI", 10, "bold"),
+            relief="flat", bd=0, padx=16, pady=8,
+            cursor="hand2",
+            command=self.test_screen_capture
+        )
+        screen_test_btn.pack(side="left")
 
         # 会話ステート表示
         state_frame = tk.Frame(parent, bg=self.colors["panel"], pady=4)
@@ -670,7 +681,7 @@ class BotGUI:
 
             logger = logging.getLogger("gui_bot")
             logger.info("=" * 50)
-            logger.info("AIコメント太郎 v3.18 を起動します")
+            logger.info("AIコメント太郎 v3.19 を起動します")
             logger.info(f"チャンネル: #{config.CHANNEL_NAME}")
             logger.info(f"音声認識: Google Web Speech API（日本語）")
             logger.info(f"コメント生成: Gemini API ({config.GEMINI_MODEL})")
@@ -933,6 +944,43 @@ class BotGUI:
         self._append_log("停止中...", "INFO")
         self.bot_running = False
         self.root.after(2000, lambda: self._append_log("✓ Botを停止しました", "INFO") if not self.bot_running else None)
+
+    def test_screen_capture(self):
+        """画面キャプチャのテストを実行する"""
+        import threading
+
+        def _run_test():
+            try:
+                self._append_log("📷 画面テスト開始...", "INFO")
+
+                import sys
+                import os
+                sys.path.insert(0, os.path.dirname(__file__))
+                import config
+                from screen_module import ScreenModule
+
+                screen = ScreenModule(config)
+
+                # キャプチャ
+                image_bytes = screen._capture_screenshot()
+                if not image_bytes:
+                    self._append_log("❌ スクリーンショット取得失敗。mss・Pillowが入っているか確認してください。", "ERROR")
+                    return
+
+                self._append_log(f"✅ スクリーンショット取得成功 ({len(image_bytes)//1024}KB)", "INFO")
+                self._append_log("🔍 Gemini APIで解析中...", "INFO")
+
+                # 解析
+                description = screen._analyze_screenshot(image_bytes)
+                if description:
+                    self._append_log(f"✅ 画面認識結果: {description}", "INFO")
+                else:
+                    self._append_log("❌ 画面認識失敗（空レスポンスまたはスキップ判定）", "WARNING")
+
+            except Exception as e:
+                self._append_log(f"❌ テストエラー: {e}", "ERROR")
+
+        threading.Thread(target=_run_test, daemon=True).start()
 
     def clear_log(self):
         self.log_text.config(state="normal")
