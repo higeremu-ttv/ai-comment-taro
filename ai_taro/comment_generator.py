@@ -65,6 +65,10 @@ class CommentGenerator:
 - 必ず文章を最後まで書き切ること（途中で終わることは禁止）
 - 出力はコメント本文のみ。「（〜に対して）」「自分:」などの注釈は絶対に含めないこと
 - 配信者の名前がわからない場合は「〇〇」「（配信者名）」などのプレースホルダーを使わないこと。「あなた」「配信者」「そっち」などで代替すること
+- 性的・エロティックな表現は一切禁止。どんな文脈でも性的な内容を含めないこと
+- 差別的・侮辱的・ヘイトスピーチに当たる表現は一切禁止
+- 暴力的・攻撃的な表現は一切禁止
+- Twitchの利用規約に違反する可能性がある表現は一切禁止
 
 【コメントの長さ・スタイル】
 - 1〜3文で書くこと
@@ -137,10 +141,11 @@ class CommentGenerator:
                     max_output_tokens=max_tokens,
                 ),
                 safety_settings=[
-                    {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
-                    {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
-                    {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
-                    {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
+                    # 性的コンテンツは中程度以上をブロック
+                    {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
+                    {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
+                    {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
+                    {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
                 ],
                 system_instruction=self.get_system_prompt()
             )
