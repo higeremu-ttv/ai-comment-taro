@@ -64,6 +64,7 @@ class CommentGenerator:
 - 「え、」「やばい、」「なるほど、」など接続詞や感嘆詞だけで終わることは絶対禁止
 - 必ず文章を最後まで書き切ること（途中で終わることは禁止）
 - 出力はコメント本文のみ。「（〜に対して）」「自分:」などの注釈は絶対に含めないこと
+- 配信者の名前がわからない場合は「〇〇」「（配信者名）」などのプレースホルダーを使わないこと。「あなた」「配信者」「そっち」などで代替すること
 
 【コメントの長さ・スタイル】
 - 1〜3文で書くこと
@@ -197,6 +198,10 @@ class CommentGenerator:
                 logger.warning(f"短すぎるコメント({len(comment)}文字)を破棄: '{comment}'")
                 return None
 
+            # 生成されたコメントにNGワードが含まれていたら破棄
+            if self._contains_ng_word(comment):
+                return None
+
             return comment
 
         except Exception as e:
@@ -220,6 +225,18 @@ class CommentGenerator:
 
     def _is_duplicate(self, comment: str) -> bool:
         return comment in self._last_comments
+
+    def _contains_ng_word(self, text: str) -> bool:
+        """NGワードが含まれているかチェックする"""
+        ng_words_str = getattr(self.config, 'NG_WORDS', '')
+        if not ng_words_str:
+            return False
+        ng_words = [w.strip() for w in ng_words_str.split(',') if w.strip()]
+        for word in ng_words:
+            if word in text:
+                logger.warning(f"[NGワード検出] '{word}' が含まれているためスキップします")
+                return True
+        return False
 
     def _build_history_text(self) -> str:
         if len(self._conversation_history) <= 1:
@@ -264,6 +281,10 @@ class CommentGenerator:
             return self._generate_direct_conversation(speech_text)
         if trigger == CommentTrigger.VIEWER_COMMAND:
             return self._generate_viewer_command_response(speech_text)
+
+        # 音声テキストにNGワードが含まれていたらスキップ
+        if speech_text and self._contains_ng_word(speech_text):
+            return None
 
         # 話題クールダウン中はスキップ
         if self._is_in_topic_cooldown():

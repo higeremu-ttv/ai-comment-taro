@@ -1,5 +1,5 @@
 """
-AIコメント太郎 - GUI管理アプリ v3.20
+AIコメント太郎 - GUI管理アプリ v3.22
 tkinterを使ったデスクトップGUIアプリです。
 このファイルを実行するとGUIが起動します: python gui_app.py
 """
@@ -26,7 +26,7 @@ class QueueHandler(logging.Handler):
 class BotGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("AIコメント太郎 v3.20")
+        self.root.title("AIコメント太郎 v3.22")
         self.root.geometry("820x660")
         self.root.resizable(True, True)
         self.root.configure(bg="#1a1a2e")
@@ -121,7 +121,7 @@ class BotGUI:
         header = tk.Frame(self.root, bg=self.colors["bg"], pady=10)
         header.pack(fill="x", padx=16)
 
-        tk.Label(header, text="🎮  AIコメント太郎  v3.20",
+        tk.Label(header, text="🎮  AIコメント太郎  v3.22",
                  bg=self.colors["bg"], fg=self.colors["text"],
                  font=("Segoe UI", 16, "bold")).pack(side="left")
 
@@ -327,6 +327,7 @@ class BotGUI:
         self.var_chat_window = tk.StringVar()
         self.var_chat_quiet = tk.StringVar()
         self.var_excluded_accounts = tk.StringVar()
+        self.var_ng_words = tk.StringVar()
         self.var_ai_name = tk.StringVar()
         self.var_comment_max_tokens = tk.StringVar()
         self.var_viewer_commands_enabled = tk.BooleanVar()
@@ -450,6 +451,11 @@ class BotGUI:
         make_field(sec4, "除外アカウント", self.var_excluded_accounts)
         make_note(sec4, "無視するアカウントをカンマ区切りで入力。例: nightbot,streamelements,moobot")
 
+        # NGワード設定
+        sec_ng = make_section("NGワードフィルター設定", color="#d63031")
+        make_field(sec_ng, "NGワードリスト", self.var_ng_words)
+        make_note(sec_ng, "カンマ区切りで入力。音声認識結果・生成コメント両方をチェックします。")
+
         # 視聴者コマンド設定
         sec_cmd = make_section("視聴者コマンド設定", color="#ffd93d")
         chk_cmd_row = tk.Frame(sec_cmd, bg=self.colors["panel"])
@@ -531,6 +537,7 @@ class BotGUI:
             self.var_chat_window.set(str(getattr(cfg, "CHAT_ACTIVITY_WINDOW_SECONDS", "60")))
             self.var_chat_quiet.set(str(getattr(cfg, "CHAT_QUIET_RESUME_SECONDS", "30")))
             self.var_excluded_accounts.set(getattr(cfg, "EXCLUDED_ACCOUNTS", "nightbot,streamelements,moobot,fossabot"))
+            self.var_ng_words.set(getattr(cfg, "NG_WORDS", ""))
             self.var_ai_name.set(getattr(cfg, "AI_NAME", "太郎"))
             self.var_comment_max_tokens.set(str(getattr(cfg, "COMMENT_MAX_TOKENS", "300")))
             self.var_viewer_commands_enabled.set(getattr(cfg, "VIEWER_COMMANDS_ENABLED", True))
@@ -610,6 +617,9 @@ class BotGUI:
                 secrets_content = replace_value(secrets_content, "AI_NAME", self.var_ai_name.get())
                 secrets_content = replace_value(secrets_content, "VIEWER_COMMAND_PREFIX", self.var_viewer_command_prefix.get())
                 secrets_content = replace_value(secrets_content, "EXCLUDED_ACCOUNTS", self.var_excluded_accounts.get())
+
+            # NGワードはconfig.pyに保存
+            content = replace_value(content, "NG_WORDS", self.var_ng_words.get())
                 secrets_content = replace_value(secrets_content, "GAME_TITLE", self.var_game_title.get())
                 secrets_content = replace_value(secrets_content, "SCREEN_MONITOR_INDEX",
                                                 self.var_monitor_index.get(), is_string=False)
@@ -681,7 +691,7 @@ class BotGUI:
 
             logger = logging.getLogger("gui_bot")
             logger.info("=" * 50)
-            logger.info("AIコメント太郎 v3.20 を起動します")
+            logger.info("AIコメント太郎 v3.22 を起動します")
             logger.info(f"チャンネル: #{config.CHANNEL_NAME}")
             logger.info(f"音声認識: Google Web Speech API（日本語）")
             logger.info(f"コメント生成: Gemini API ({config.GEMINI_MODEL})")
