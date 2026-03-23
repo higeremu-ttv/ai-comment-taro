@@ -1,5 +1,5 @@
 """
-AIコメント太郎 - GUI管理アプリ v3.22
+AIコメント太郎 - GUI管理アプリ v3.23
 tkinterを使ったデスクトップGUIアプリです。
 このファイルを実行するとGUIが起動します: python gui_app.py
 """
@@ -26,7 +26,7 @@ class QueueHandler(logging.Handler):
 class BotGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("AIコメント太郎 v3.22")
+        self.root.title("AIコメント太郎 v3.23")
         self.root.geometry("820x660")
         self.root.resizable(True, True)
         self.root.configure(bg="#1a1a2e")
@@ -121,7 +121,7 @@ class BotGUI:
         header = tk.Frame(self.root, bg=self.colors["bg"], pady=10)
         header.pack(fill="x", padx=16)
 
-        tk.Label(header, text="🎮  AIコメント太郎  v3.22",
+        tk.Label(header, text="🎮  AIコメント太郎  v3.23",
                  bg=self.colors["bg"], fg=self.colors["text"],
                  font=("Segoe UI", 16, "bold")).pack(side="left")
 
@@ -617,15 +617,15 @@ class BotGUI:
                 secrets_content = replace_value(secrets_content, "AI_NAME", self.var_ai_name.get())
                 secrets_content = replace_value(secrets_content, "VIEWER_COMMAND_PREFIX", self.var_viewer_command_prefix.get())
                 secrets_content = replace_value(secrets_content, "EXCLUDED_ACCOUNTS", self.var_excluded_accounts.get())
-
-            # NGワードはconfig.pyに保存
-            content = replace_value(content, "NG_WORDS", self.var_ng_words.get())
                 secrets_content = replace_value(secrets_content, "GAME_TITLE", self.var_game_title.get())
                 secrets_content = replace_value(secrets_content, "SCREEN_MONITOR_INDEX",
                                                 self.var_monitor_index.get(), is_string=False)
 
                 with open(secrets_path, "w", encoding="utf-8") as f:
                     f.write(secrets_content)
+
+            # NGワードはconfig.pyに保存
+            content = replace_value(content, "NG_WORDS", self.var_ng_words.get())
 
             messagebox.showinfo("保存完了", "設定を保存しました。\n変更を反映するにはBotを再起動してください。")
         except Exception as e:
@@ -691,7 +691,7 @@ class BotGUI:
 
             logger = logging.getLogger("gui_bot")
             logger.info("=" * 50)
-            logger.info("AIコメント太郎 v3.22 を起動します")
+            logger.info("AIコメント太郎 v3.23 を起動します")
             logger.info(f"チャンネル: #{config.CHANNEL_NAME}")
             logger.info(f"音声認識: Google Web Speech API（日本語）")
             logger.info(f"コメント生成: Gemini API ({config.GEMINI_MODEL})")
