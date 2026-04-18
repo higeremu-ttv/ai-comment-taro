@@ -24,3 +24,6 @@ desktop.ini
 venv/
 env/
 .env
+
+# 学習済みプロフィール（個人情報を含む）
+learned_profile.json

@@ -326,7 +326,8 @@ class CommentGenerator:
         except Exception as e:
             error_str = str(e)
             if "429" in error_str or "quota" in error_str.lower() or "rate" in error_str.lower():
-                logger.warning("Gemini APIのレート制限に達しました。スキップします。")
+                logger.warning("Gemini APIのレート制限に達しました。10秒待機します。")
+                time.sleep(10)
             else:
                 logger.error(f"コメント生成エラー: {e}")
             return None
