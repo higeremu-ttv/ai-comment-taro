@@ -1,5 +1,5 @@
 """
-AIコメント太郎 - GUI管理アプリ v3.26
+AIコメント太郎 - GUI管理アプリ v3.27
 tkinterを使ったデスクトップGUIアプリです。
 このファイルを実行するとGUIが起動します: python gui_app.py
 """
@@ -26,7 +26,7 @@ class QueueHandler(logging.Handler):
 class BotGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("AIコメント太郎 v3.26")
+        self.root.title("AIコメント太郎 v3.27")
         self.root.geometry("820x660")
         self.root.resizable(True, True)
         self.root.configure(bg="#1a1a2e")
@@ -121,7 +121,7 @@ class BotGUI:
         header = tk.Frame(self.root, bg=self.colors["bg"], pady=10)
         header.pack(fill="x", padx=16)
 
-        tk.Label(header, text="🎮  AIコメント太郎  v3.26",
+        tk.Label(header, text="🎮  AIコメント太郎  v3.27",
                  bg=self.colors["bg"], fg=self.colors["text"],
                  font=("Yu Gothic UI", 16, "bold")).pack(side="left")
 
@@ -308,6 +308,7 @@ class BotGUI:
         # 設定変数
         self.var_bot_nick = tk.StringVar()
         self.var_bot_token = tk.StringVar()
+        self.var_streamer_token = tk.StringVar()
         self.var_channel = tk.StringVar()
         self.var_gemini_api_key = tk.StringVar()
         self.var_gemini_model = tk.StringVar()
@@ -318,7 +319,6 @@ class BotGUI:
         self.var_topic_cooldown = tk.StringVar()
         self.var_screen_enabled = tk.BooleanVar()
         self.var_screen_interval = tk.StringVar()
-        self.var_game_title = tk.StringVar()
         self.var_monitor_index = tk.StringVar()
         self.var_retry_count = tk.StringVar()
         self.var_retry_interval = tk.StringVar()
@@ -341,9 +341,10 @@ class BotGUI:
         # Twitch設定
         sec1 = make_section("Twitch 接続設定")
         make_field(sec1, "Botアカウント名", self.var_bot_nick)
-        make_field(sec1, "OAuthトークン", self.var_bot_token, show="*")
+        make_field(sec1, "OAuthトークン (Bot)", self.var_bot_token, show="*")
         make_field(sec1, "チャンネル名", self.var_channel)
-        make_note(sec1, "OAuthトークンの取得: https://twitchtokengenerator.com/")
+        make_field(sec1, "OAuthトークン (配信者)", self.var_streamer_token, show="*")
+        make_note(sec1, "配信者トークンは配信タイトル・ゲーム名の自動取得に使用。get_token.pyで配信者アカウントから取得してください。")
 
         # Gemini API設定（最重要）
         sec_gemini = make_section("Gemini API 設定（最重要）", color=self.colors["gemini"])
@@ -393,24 +394,6 @@ class BotGUI:
         make_note(sec3, "コメント生成失敗時の再試行回数。レート制限が頻発する場合は 0 を推奨（失敗したら即座にスキップ）")
         make_field(sec3, "リトライ間隔 (秒)", self.var_retry_interval)
         make_note(sec3, "リトライまで待機する秒数。レート制限時は少し待つことで次のリクエストが通りやすくなります。推奨: 5秒以上")
-
-        # 画面認識設定
-        sec_screen = make_section("ゲーム画面認識設定")
-        chk_screen = tk.Frame(sec_screen, bg=self.colors["panel"])
-        chk_screen.pack(fill="x", padx=12, pady=3)
-        tk.Checkbutton(
-            chk_screen, text="ゲーム画面をGemini APIで解析する（VRAMを使用しない）",
-            variable=self.var_screen_enabled,
-            bg=self.colors["panel"], fg=self.colors["text"],
-            selectcolor=self.colors["log_bg"],
-            activebackground=self.colors["panel"],
-            font=("Yu Gothic UI", 10)
-        ).pack(side="left")
-        make_field(sec_screen, "画面キャプチャ間隔 (秒)", self.var_screen_interval)
-        make_note(sec_screen, "何秒ごとにゲーム画面を解析するか。推奨: 30秒（APIリクエスト節約のため）")
-
-        make_field(sec_screen, "キャプチャするモニター番号", self.var_monitor_index)
-        make_note(sec_screen, "1=プライマリ、2=セカンダリ。起動ログに「モニター[1]:...」と表示されます。")
 
         # チャット監視設定
         sec4 = make_section("他視聴者コメント監視設定")
@@ -514,6 +497,7 @@ class BotGUI:
 
             self.var_bot_nick.set(getattr(cfg, "BOT_NICK", ""))
             self.var_bot_token.set(getattr(cfg, "BOT_TOKEN", ""))
+            self.var_streamer_token.set(getattr(cfg, "STREAMER_TOKEN", ""))
             self.var_channel.set(getattr(cfg, "CHANNEL_NAME", ""))
             self.var_gemini_api_key.set(getattr(cfg, "GEMINI_API_KEY", ""))
             self.var_gemini_model.set(getattr(cfg, "GEMINI_MODEL", "gemini-1.5-flash"))
@@ -524,7 +508,6 @@ class BotGUI:
             self.var_topic_cooldown.set(str(getattr(cfg, "TOPIC_COOLDOWN_SECONDS", "60")))
             self.var_screen_enabled.set(getattr(cfg, "SCREEN_RECOGNITION_ENABLED", True))
             self.var_screen_interval.set(str(getattr(cfg, "SCREEN_CAPTURE_INTERVAL", "300")))
-            self.var_game_title.set(getattr(cfg, "GAME_TITLE", "フォートナイト"))
             self.var_monitor_index.set(str(getattr(cfg, "SCREEN_MONITOR_INDEX", "1")))
             self.var_retry_count.set(str(getattr(cfg, "COMMENT_RETRY_COUNT", "2")))
             self.var_retry_interval.set(str(getattr(cfg, "COMMENT_RETRY_INTERVAL", "5")))
@@ -613,15 +596,28 @@ class BotGUI:
                 with open(secrets_path, "r", encoding="utf-8") as f:
                     secrets_content = f.read()
 
+                # キーが存在しない場合は末尾に自動追記
+                def ensure_key(content, key, value, is_string=True):
+                    if key not in content:
+                        if is_string:
+                            content += f'\n{key} = "{value}"\n'
+                        else:
+                            content += f'\n{key} = {value}\n'
+                    return content
+
+                secrets_content = ensure_key(secrets_content, "STREAMER_NAME", self.var_streamer_name.get())
+                secrets_content = ensure_key(secrets_content, "REACTION_BOT_ACCOUNTS", self.var_reaction_bot_accounts.get())
+
                 secrets_content = replace_value(secrets_content, "BOT_NICK", self.var_bot_nick.get())
                 secrets_content = replace_value(secrets_content, "BOT_TOKEN", self.var_bot_token.get())
+                secrets_content = ensure_key(secrets_content, "STREAMER_TOKEN", self.var_streamer_token.get())
+                secrets_content = replace_value(secrets_content, "STREAMER_TOKEN", self.var_streamer_token.get())
                 secrets_content = replace_value(secrets_content, "CHANNEL_NAME", self.var_channel.get())
                 secrets_content = replace_value(secrets_content, "GEMINI_API_KEY", self.var_gemini_api_key.get())
                 secrets_content = replace_value(secrets_content, "AI_NAME", self.var_ai_name.get())
                 secrets_content = replace_value(secrets_content, "STREAMER_NAME", self.var_streamer_name.get())
                 secrets_content = replace_value(secrets_content, "VIEWER_COMMAND_PREFIX", self.var_viewer_command_prefix.get())
                 secrets_content = replace_value(secrets_content, "EXCLUDED_ACCOUNTS", self.var_excluded_accounts.get())
-                secrets_content = replace_value(secrets_content, "GAME_TITLE", self.var_game_title.get())
                 secrets_content = replace_value(secrets_content, "SCREEN_MONITOR_INDEX",
                                                 self.var_monitor_index.get(), is_string=False)
 
@@ -695,7 +691,7 @@ class BotGUI:
 
             logger = logging.getLogger("gui_bot")
             logger.info("=" * 50)
-            logger.info("AIコメント太郎 v3.26 を起動します")
+            logger.info("AIコメント太郎 v3.27 を起動します")
             logger.info(f"チャンネル: #{config.CHANNEL_NAME}")
             logger.info(f"音声認識: Google Web Speech API（日本語）")
             logger.info(f"コメント生成: Gemini API ({config.GEMINI_MODEL})")
@@ -886,6 +882,18 @@ class BotGUI:
             twitch.start()
             time.sleep(4)
 
+            # 配信情報をTwitch APIから取得
+            stream_info = twitch.get_stream_info()
+            if stream_info:
+                generator.set_stream_info(stream_info)
+                if stream_info.get('game_name'):
+                    screen._stream_game_name = stream_info['game_name']
+                    logger.info(f"📡 配信情報取得成功 - ゲーム: {stream_info['game_name']}")
+                if stream_info.get('title'):
+                    logger.info(f"📡 配信タイトル: {stream_info['title']}")
+            else:
+                logger.info("📡 配信情報取得なし（オフラインまたは未配信）")
+
             logger.info("ゲーム画面認識を開始します...")
             screen.start()
 
@@ -992,7 +1000,7 @@ class BotGUI:
                         return
                     import base64
                     import google.generativeai as genai
-                    game_title = getattr(config, 'GAME_TITLE', '') or 'ゲーム配信'
+                    game_title = getattr(config, 'STREAM_GAME_NAME', '') or 'ゲーム配信'
                     prompt = f"これは{game_title}のゲーム配信画面です。画面に何が映っているか日本語で説明してください。"
                     response = model.generate_content([
                         prompt,

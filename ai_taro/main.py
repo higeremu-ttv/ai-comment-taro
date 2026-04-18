@@ -1,5 +1,5 @@
 """
-AIコメント太郎 v3.26 - メインコントローラー
+AIコメント太郎 v3.27 - メインコントローラー
 配信中に音声を認識し、自然な日本語コメントを自動投稿するbotです。
 音声認識: Google Web Speech API（高精度・無料）
 コメント生成: Gemini API（gemini-1.5-flash・無料枠あり）
@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)
 
 class TwitchAIBot:
     """
-    AIコメント太郎 v3.26のメインコントローラー。
+    AIコメント太郎 v3.27のメインコントローラー。
     各モジュールを統合し、タイミング制御を行います。
     """
 
@@ -210,7 +210,7 @@ class TwitchAIBot:
     def start(self):
         """botを起動する"""
         logger.info("=" * 60)
-        logger.info("AIコメント太郎 v3.26 を起動します")
+        logger.info("AIコメント太郎 v3.27 を起動します")
         logger.info(f"チャンネル: #{cfg.CHANNEL_NAME}")
         logger.info(f"音声認識: Google Web Speech API（日本語）")
         logger.info(f"コメント生成: Gemini API ({cfg.GEMINI_MODEL})")
@@ -236,6 +236,13 @@ class TwitchAIBot:
         stream_info = self.twitch.get_stream_info()
         if stream_info:
             self.generator.set_stream_info(stream_info)
+            if stream_info.get('game_name'):
+                self.screen._stream_game_name = stream_info['game_name']
+                logger.info(f"📡 配信情報取得成功 - ゲーム: {stream_info['game_name']}")
+            if stream_info.get('title'):
+                logger.info(f"📡 配信タイトル: {stream_info['title']}")
+        else:
+            logger.info("📡 配信情報取得なし（オフラインまたはAPI未設定）")
 
         logger.info("ゲーム画面認識を開始します...")
         self.screen.start()

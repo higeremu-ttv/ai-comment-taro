@@ -1,29 +1,40 @@
 """
-設定ファイル v3.15
+設定ファイル v3.26
 個人設定は secrets.py に分離しました。
 このファイルはGitHubで管理されます（毎回上書きOK）。
 """
 
-# secrets.py から個人設定を読み込む
-try:
-    from secrets import (
-        BOT_NICK, BOT_TOKEN, CHANNEL_NAME, GEMINI_API_KEY,
-        AI_NAME, VIEWER_COMMAND_PREFIX,
-        MICROPHONE_INDEX, SCREEN_MONITOR_INDEX, GAME_TITLE,
-        EXCLUDED_ACCOUNTS
-    )
-except ImportError:
+import importlib.util
+import os
+import sys
+
+# secrets.py を明示的にパスを指定して読み込む（Python標準のsecretsモジュールと名前衝突を回避）
+_secrets_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "secrets.py")
+if not os.path.exists(_secrets_path):
     raise RuntimeError(
         "secrets.py が見つかりません。\n"
         "secrets_sample.py をコピーして secrets.py を作成し、\n"
         "APIキー・トークン等を設定してください。"
     )
+_spec = importlib.util.spec_from_file_location("_user_secrets", _secrets_path)
+_s = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_s)
 
-# STREAMER_NAMEは任意項目（secrets.pyになくてもOK）
-try:
-    from secrets import STREAMER_NAME
-except ImportError:
-    STREAMER_NAME = ""
+def _get(key, default=None):
+    return getattr(_s, key, default)
+
+BOT_NICK = _get("BOT_NICK", "")
+BOT_TOKEN = _get("BOT_TOKEN", "")
+CHANNEL_NAME = _get("CHANNEL_NAME", "")
+GEMINI_API_KEY = _get("GEMINI_API_KEY", "")
+AI_NAME = _get("AI_NAME", "AIコメント太郎")
+VIEWER_COMMAND_PREFIX = _get("VIEWER_COMMAND_PREFIX", "!AIコメント太郎")
+MICROPHONE_INDEX = _get("MICROPHONE_INDEX", None)
+SCREEN_MONITOR_INDEX = _get("SCREEN_MONITOR_INDEX", 1)
+EXCLUDED_ACCOUNTS = _get("EXCLUDED_ACCOUNTS", "moobot,fossabot")
+STREAMER_NAME = _get("STREAMER_NAME", "")
+STREAMER_TOKEN = _get("STREAMER_TOKEN", "")
+REACTION_BOT_ACCOUNTS = _get("REACTION_BOT_ACCOUNTS", "nightbot,streamelements")
 
 # ============================================================
 # Gemini API 設定

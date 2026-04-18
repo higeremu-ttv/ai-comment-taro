@@ -92,6 +92,7 @@ class TwitchModule:
     def get_stream_info(self) -> dict:
         """
         Twitch APIから配信情報（タイトル・ゲーム名）を取得する。
+        配信者のOAuthトークンを使用。
         失敗した場合は空dictを返す。
         """
         try:
@@ -99,24 +100,26 @@ class TwitchModule:
             import json
 
             channel_name = getattr(self.config, 'CHANNEL_NAME', '')
-            client_id = getattr(self.config, 'TWITCH_CLIENT_ID', '')
-            token = getattr(self.config, 'BOT_TOKEN', '').replace('oauth:', '')
+            # 配信者トークンを優先、なければbotトークンで試みる
+            token = getattr(self.config, 'STREAMER_TOKEN', '').replace('oauth:', '')
+            if not token:
+                token = getattr(self.config, 'BOT_TOKEN', '').replace('oauth:', '')
 
             if not channel_name or not token:
+                logger.info("📡 配信情報取得スキップ（トークン未設定）")
                 return {}
 
-            # ユーザー情報を取得
             url = f"https://api.twitch.tv/helix/streams?user_login={channel_name}"
             req = urllib.request.Request(url)
             req.add_header('Authorization', f'Bearer {token}')
-            req.add_header('Client-Id', client_id) if client_id else None
+            req.add_header('Client-Id', 'kimne78kx3ncx6brgo4mv6wki5h1ko')
 
             with urllib.request.urlopen(req, timeout=5) as response:
                 data = json.loads(response.read().decode())
 
             streams = data.get('data', [])
             if not streams:
-                logger.debug("配信情報が取得できませんでした（オフラインまたは権限不足）")
+                logger.info("📡 配信情報取得なし（オフライン）")
                 return {}
 
             stream = streams[0]
@@ -124,11 +127,11 @@ class TwitchModule:
                 'title': stream.get('title', ''),
                 'game_name': stream.get('game_name', ''),
             }
-            logger.info(f"配信情報取得: タイトル='{info['title']}' ゲーム='{info['game_name']}'")
+            logger.info(f"📡 配信情報取得成功 - ゲーム: {info['game_name']} / タイトル: {info['title']}")
             return info
 
         except Exception as e:
-            logger.debug(f"配信情報取得失敗（スキップ）: {e}")
+            logger.info(f"📡 配信情報取得失敗: {e}")
             return {}
 
     def send_comment(self, message: str):

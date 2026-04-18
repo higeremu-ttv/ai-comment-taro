@@ -13,6 +13,7 @@ Gemini APIのマルチモーダル機能を使って、ゲーム画面の状況�
 import threading
 import time
 import logging
+import os
 import base64
 import io
 from typing import Optional
@@ -52,41 +53,9 @@ class ScreenModule:
         self.audio_module = None
         self.twitch_module = None
 
-        # ゲーム設定JSONを読み込む
-        self._game_config = self._load_game_config()
+        # Twitch APIから取得したゲーム名
+        self._stream_game_name = ''
 
-    def _load_game_config(self) -> dict:
-        """games/フォルダからゲーム設定JSONを読み込む"""
-        import json
-        import os
-
-        game_title = getattr(self.config, 'GAME_TITLE', '')
-        if not game_title:
-            return {}
-
-        # gamesフォルダのパスを探す
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        games_dir = os.path.join(base_dir, 'games')
-
-        if not os.path.exists(games_dir):
-            return {}
-
-        # titleが一致するJSONを探す
-        for filename in os.listdir(games_dir):
-            if not filename.endswith('.json'):
-                continue
-            filepath = os.path.join(games_dir, filename)
-            try:
-                with open(filepath, encoding='utf-8') as f:
-                    data = json.load(f)
-                if data.get('title') == game_title or data.get('title_en') == game_title:
-                    logger.info(f"ゲーム設定を読み込みました: {filename} ({game_title})")
-                    return data
-            except Exception as e:
-                logger.warning(f"ゲーム設定ファイルの読み込み失敗: {filename} ({e})")
-
-        logger.info(f"ゲーム設定ファイルが見つかりません（{game_title}）。汎用プロンプトを使用します。")
-        return {}
 
     def _get_gemini_vision_model(self):
         """Gemini Visionモデルを取得する（遅延初期化）"""
@@ -189,21 +158,23 @@ class ScreenModule:
             import ctypes
             import ctypes.wintypes
 
-            game_title = getattr(self.config, 'GAME_TITLE', 'フォートナイト')
+            game_title = getattr(self, '_stream_game_name', '') or 'ゲーム配信'
 
             # JSONのwindow_titlesを優先、なければtitle_mapにフォールバック
-            if self._game_config.get('window_titles'):
-                target_titles = self._game_config['window_titles']
-            else:
-                title_map = {
-                    'フォートナイト': ['Fortnite', 'FortniteClient'],
-                    'Apex Legends': ['Apex Legends'],
-                    'ヴァロラント': ['VALORANT'],
-                    'マインクラフト': ['Minecraft'],
-                    'Apex': ['Apex Legends'],
-                    'VALORANT': ['VALORANT'],
-                }
-                target_titles = title_map.get(game_title, [game_title])
+            # Twitch APIから取得したゲーム名またはconfig設定を使用
+            game_name = game_title
+            title_map = {
+                'フォートナイト': ['Fortnite', 'FortniteClient'],
+                'Fortnite': ['Fortnite', 'FortniteClient'],
+                'Apex Legends': ['Apex Legends'],
+                'ヴァロラント': ['VALORANT'],
+                'VALORANT': ['VALORANT'],
+                'マインクラフト': ['Minecraft'],
+                'Minecraft': ['Minecraft'],
+                'Grand Theft Auto V': ['GTA5', 'Grand Theft Auto'],
+                'GTA': ['GTA5', 'Grand Theft Auto'],
+            }
+            target_titles = title_map.get(game_name, [game_name])
 
             found = {}
 
@@ -257,15 +228,10 @@ class ScreenModule:
 
             logger.info("[画面認識] Gemini API にリクエスト送信中...")
 
-            game_title = getattr(self.config, 'GAME_TITLE', '') or 'ゲーム配信'
-            gc = self._game_config  # ゲーム設定JSON
+            game_title = getattr(self, '_stream_game_name', '') or 'ゲーム配信'
 
-            # UI説明セクション（JSONまたはconfig.pyから）
-            ui_desc = gc.get('ui_description') or getattr(self.config, 'GAME_UI_DESCRIPTION', '')
-            ui_section = f"\n【{game_title}のUI説明】\n{ui_desc}\n" if ui_desc else ""
-
-            # スキップシーンリスト（JSONまたはデフォルト）
-            skip_scenes = gc.get('skip_scenes') or [
+            # スキップシーンリスト
+            skip_scenes = [
                 "ロード中・ロード画面（真っ黒・真っ白・プログレスバーのみ）",
                 "ロビー・マッチング待ち・試合開始前の待機画面",
                 "観戦中・スペクテイター画面",
@@ -274,28 +240,19 @@ class ScreenModule:
             ]
             skip_lines = "\n".join(f"- {s}" for s in skip_scenes)
 
-            # マップ画面の特別処理（JSONで定義されている場合）
-            map_logic = gc.get('special_logic', {}).get('map_screen', {})
-            map_section = ""
-            if map_logic.get('enabled') and map_logic.get('description'):
-                map_section = f"\n【マップ画面（全体マップ表示）の場合】\n{map_logic['description']}\n"
-
-            # コメントヒント（JSONで定義されている場合）
-            hints = gc.get('comment_hints', [])
-            hint_section = ("\n【コメントのヒント】\n" + "\n".join(f"- {h}" for h in hints) + "\n") if hints else ""
-
             prompt = f"""これはゲーム配信（{game_title}）のスクリーンショットです。
 
 まず、以下のいずれかに該当する画面かどうか判断してください。
 該当する場合は「スキップ:（理由）」とだけ答えてください。
 {skip_lines}
-{map_section}
-上記に該当しない場合のみ、現在の状況を日本語で2〜3文で説明してください。{ui_section}{hint_section}
+
+上記に該当しない場合のみ、現在の状況を日本語で2〜3文で説明してください。
 【注目してほしい情報】
 - 今何のゲームをプレイしているか（画面から判断）
 - プレイヤーの現在の状況（HP・点数・スコア・残り時間など見えるもの）
 - 今何が起きているか（戦闘中・移動中・ターン待ち・上がり・ミッション中など）
 - 画面に表示されているテキスト情報（役名・ミッション名・スコアなど）
+- 具体的な数字・事実は断言せず、雰囲気や状況を中心に説明すること
 
 必ず日本語のみで答えてください。"""
 
