@@ -218,8 +218,58 @@ class CommentGenerator:
             logger.error(f"Gemini APIの初期化エラー: {e}")
             return None
 
-    def _call_gemini(self, prompt: str) -> Optional[str]:
-        """Gemini APIを呼び出す。短すぎる結果は1回だけ再試行する。"""
+    def _is_search_trigger(self, text: str) -> bool:
+        """検索が必要なキーワードが含まれているか判定する"""
+        search_keywords = [
+            '調べて', '検索して', '教えて', 'おしえて',
+            'なんだっけ', 'なんだろう', 'どうやって', 'どうやる',
+            'って何', 'とは何', 'とは？', 'って何？',
+            'いくら', 'どこで', 'いつから', 'いつまで',
+            '最新', '今の', '今日の', '天気', 'ニュース',
+        ]
+        return any(kw in text for kw in search_keywords)
+
+    def _call_gemini_with_search(self, prompt: str) -> Optional[str]:
+        """Google Search Groundingを有効にしてGemini APIを呼び出す"""
+        try:
+            import google.generativeai as genai
+            genai.configure(api_key=self.config.GEMINI_API_KEY)
+
+            model = genai.GenerativeModel(
+                model_name=getattr(self.config, 'GEMINI_MODEL', 'gemini-2.5-flash-lite'),
+                tools='google_search_retrieval',
+                system_instruction=self.get_system_prompt()
+            )
+
+            self.is_generating = True
+            search_prompt = prompt + "\n\n必要なら検索して調べてください。回答は日本語で20文字以内の短い友達口調でお願いします。"
+            response = model.generate_content(search_prompt)
+
+            if not response or not response.text:
+                return None
+
+            comment = response.text.strip().replace("\n", " ").strip()
+            if len(comment) < 5:
+                return None
+
+            logger.info(f"[検索grounding] 回答生成成功")
+            return comment
+
+        except Exception as e:
+            logger.warning(f"[検索grounding] 失敗、通常モードにフォールバック: {e}")
+            return None
+        finally:
+            self.is_generating = False
+
+    def _call_gemini(self, prompt: str, use_search: bool = False) -> Optional[str]:
+        """Gemini APIを呼び出す。use_search=TrueのときはGrounding有効。"""
+        if use_search:
+            result = self._call_gemini_with_search(prompt)
+            if result:
+                return result
+            # 失敗した場合は通常モードにフォールバック
+            logger.info("[検索grounding] 通常モードにフォールバック")
+
         for attempt in range(2):
             result = self._call_gemini_once(prompt)
             if result is not None:
@@ -346,8 +396,22 @@ class CommentGenerator:
 
         # AI名前呼びかけ・視聴者コマンドはクールダウンをバイパス
         if trigger == CommentTrigger.DIRECT_CONVERSATION:
+            # 検索キーワードが含まれていたら検索モード
+            if self._needs_search(speech_text):
+                result = self._call_gemini_with_search(
+                    f"「{speech_text}」という質問に対して、検索結果を元に20文字以内で友達口調で簡潔に答えてください。"
+                )
+                if result:
+                    return result
             return self._generate_direct_conversation(speech_text)
         if trigger == CommentTrigger.VIEWER_COMMAND:
+            # 検索キーワードが含まれていたら検索モード
+            if self._needs_search(speech_text):
+                result = self._call_gemini_with_search(
+                    f"「{speech_text}」という質問に対して、検索結果を元に20文字以内で友達口調で簡潔に答えてください。"
+                )
+                if result:
+                    return result
             return self._generate_viewer_command_response(speech_text)
 
         # 音声テキストにNGワードが含まれていたらスキップ
@@ -377,6 +441,22 @@ class CommentGenerator:
         return None
 
     def _generate_speech_response(self, speech_text: str, screen_description: str) -> Optional[str]:
+        # 音声認識結果にNGワードが含まれていたらGeminiに送らずスキップ
+        if self._contains_ng_word(speech_text):
+            logger.warning(f"[入力NGワード] 音声認識結果にポリシー違反の可能性があるためスキップ")
+            return None
+
+        # 検索キーワードが含まれていたら検索モードで回答
+        if self._is_search_trigger(speech_text):
+            logger.info(f"[検索モード] '{speech_text}' に検索キーワードを検出")
+            result = self._call_gemini(
+                f"配信者が「{speech_text}」と言いました。検索結果を元に20文字以内で友達口調で簡潔に答えてください。",
+                use_search=True
+            )
+            if result:
+                self._record_comment(result)
+                return result
+
         self._conversation_history.append({"role": "streamer", "content": speech_text})
         if len(self._conversation_history) > 20:
             self._conversation_history.pop(0)
@@ -524,13 +604,18 @@ class CommentGenerator:
         if cmd_type == 'hello':
             username = content.strip() if content.strip() else '視聴者'
             prompt = f"Twitchの視聴者「{username}」さんが挨拶してくれました。フレンドリーに返してください。1〜2文、日本語のみ。"
+            comment = self._call_gemini(prompt)
         else:
             question = content.strip() if content.strip() else '何か話して'
             history_text = self._build_history_text()
             prompt = f"""{history_text}視聴者からの質問：「{question}」
 自然に答えてください。1〜3文、日本語のみ。"""
+            # 質問に検索キーワードが含まれていたら検索モードで回答
+            use_search = self._is_search_trigger(question)
+            if use_search:
+                logger.info(f"[検索モード] 視聴者コマンドで検索キーワードを検出: {question}")
+            comment = self._call_gemini(prompt, use_search=use_search)
 
-        comment = self._call_gemini(prompt)
         if comment:
             self._record_comment(comment)
             self._last_comment_time = time.time()
