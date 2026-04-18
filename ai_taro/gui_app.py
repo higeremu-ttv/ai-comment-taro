@@ -1,5 +1,5 @@
 """
-AIコメント太郎 - GUI管理アプリ v3.33
+AIコメント太郎 - GUI管理アプリ v3.35
 tkinterを使ったデスクトップGUIアプリです。
 このファイルを実行するとGUIが起動します: python gui_app.py
 """
@@ -26,7 +26,7 @@ class QueueHandler(logging.Handler):
 class BotGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("AIコメント太郎 v3.33")
+        self.root.title("AIコメント太郎 v3.35")
         self.root.geometry("820x660")
         self.root.resizable(True, True)
         self.root.configure(bg="#1a1a2e")
@@ -121,7 +121,7 @@ class BotGUI:
         header = tk.Frame(self.root, bg=self.colors["bg"], pady=10)
         header.pack(fill="x", padx=16)
 
-        tk.Label(header, text="🎮  AIコメント太郎  v3.33",
+        tk.Label(header, text="🎮  AIコメント太郎  v3.35",
                  bg=self.colors["bg"], fg=self.colors["text"],
                  font=("Yu Gothic UI", 16, "bold")).pack(side="left")
 
@@ -434,11 +434,6 @@ class BotGUI:
         make_field(sec4, "反応するボットアカウント", self.var_reaction_bot_accounts)
         make_note(sec4, "お知らせ系ボットのみ指定。例: nightbot,streamelements")
 
-        # NGワード設定
-        sec_ng = make_section("NGワードフィルター設定", color="#d63031")
-        make_field(sec_ng, "NGワードリスト", self.var_ng_words)
-        make_note(sec_ng, "カンマ区切りで入力。音声認識結果・生成コメント両方をチェックします。")
-
         # 視聴者コマンド設定
         sec_cmd = make_section("視聴者コマンド設定", color="#ffd93d")
         chk_cmd_row = tk.Frame(sec_cmd, bg=self.colors["panel"])
@@ -701,7 +696,7 @@ class BotGUI:
 
             logger = logging.getLogger("gui_bot")
             logger.info("=" * 50)
-            logger.info("AIコメント太郎 v3.33 を起動します")
+            logger.info("AIコメント太郎 v3.35 を起動します")
             logger.info(f"チャンネル: #{config.CHANNEL_NAME}")
             logger.info(f"音声認識: Google Web Speech API（日本語）")
             logger.info(f"コメント生成: Gemini API ({config.GEMINI_MODEL})")
@@ -714,9 +709,12 @@ class BotGUI:
             comment_gen = CommentGenerator(config)
             twitch = TwitchModule(config)
             audio = AudioModule(config)
+            audio.set_config(config)  # NGワード前段階フィルター用
             screen = ScreenModule(config)
             # 排他制御用に comment_generator の参照をセット
             screen.comment_generator = comment_gen
+            screen.audio_module = audio
+            screen.twitch_module = twitch
 
             self.bot_instance = {
                 "audio": audio,
