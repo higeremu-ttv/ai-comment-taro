@@ -1,5 +1,5 @@
 """
-AIコメント太郎 - GUI管理アプリ v3.24
+AIコメント太郎 - GUI管理アプリ v3.25
 tkinterを使ったデスクトップGUIアプリです。
 このファイルを実行するとGUIが起動します: python gui_app.py
 """
@@ -26,7 +26,7 @@ class QueueHandler(logging.Handler):
 class BotGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("AIコメント太郎 v3.24")
+        self.root.title("AIコメント太郎 v3.25")
         self.root.geometry("820x660")
         self.root.resizable(True, True)
         self.root.configure(bg="#1a1a2e")
@@ -121,7 +121,7 @@ class BotGUI:
         header = tk.Frame(self.root, bg=self.colors["bg"], pady=10)
         header.pack(fill="x", padx=16)
 
-        tk.Label(header, text="🎮  AIコメント太郎  v3.24",
+        tk.Label(header, text="🎮  AIコメント太郎  v3.25",
                  bg=self.colors["bg"], fg=self.colors["text"],
                  font=("Segoe UI", 16, "bold")).pack(side="left")
 
@@ -329,6 +329,7 @@ class BotGUI:
         self.var_excluded_accounts = tk.StringVar()
         self.var_ng_words = tk.StringVar()
         self.var_ai_name = tk.StringVar()
+        self.var_streamer_name = tk.StringVar()
         self.var_comment_max_tokens = tk.StringVar()
         self.var_viewer_commands_enabled = tk.BooleanVar()
         self.var_viewer_command_prefix = tk.StringVar()
@@ -352,6 +353,8 @@ class BotGUI:
         sec_ai = make_section("AI キャラクター設定", color="#00b894")
         make_field(sec_ai, "AIの名前", self.var_ai_name)
         make_note(sec_ai, "配信者がこの名前で呼びかけると直接会話モードになります。例: 太郎、アリス")
+        make_field(sec_ai, "配信者の名前", self.var_streamer_name)
+        make_note(sec_ai, "AIが配信者を呼ぶときに使用します。例: ひげれむ、おじさん")
 
         tokens_row = tk.Frame(sec_ai, bg=self.colors["panel"])
         tokens_row.pack(fill="x", padx=12, pady=3)
@@ -538,7 +541,8 @@ class BotGUI:
             self.var_chat_quiet.set(str(getattr(cfg, "CHAT_QUIET_RESUME_SECONDS", "30")))
             self.var_excluded_accounts.set(getattr(cfg, "EXCLUDED_ACCOUNTS", "nightbot,streamelements,moobot,fossabot"))
             self.var_ng_words.set(getattr(cfg, "NG_WORDS", ""))
-            self.var_ai_name.set(getattr(cfg, "AI_NAME", "太郎"))
+            self.var_ai_name.set(getattr(cfg, "AI_NAME", "AIコメント太郎"))
+            self.var_streamer_name.set(getattr(cfg, "STREAMER_NAME", ""))
             self.var_comment_max_tokens.set(str(getattr(cfg, "COMMENT_MAX_TOKENS", "300")))
             self.var_viewer_commands_enabled.set(getattr(cfg, "VIEWER_COMMANDS_ENABLED", True))
             self.var_viewer_command_prefix.set(getattr(cfg, "VIEWER_COMMAND_PREFIX", "!太郎"))
@@ -615,6 +619,7 @@ class BotGUI:
                 secrets_content = replace_value(secrets_content, "CHANNEL_NAME", self.var_channel.get())
                 secrets_content = replace_value(secrets_content, "GEMINI_API_KEY", self.var_gemini_api_key.get())
                 secrets_content = replace_value(secrets_content, "AI_NAME", self.var_ai_name.get())
+                secrets_content = replace_value(secrets_content, "STREAMER_NAME", self.var_streamer_name.get())
                 secrets_content = replace_value(secrets_content, "VIEWER_COMMAND_PREFIX", self.var_viewer_command_prefix.get())
                 secrets_content = replace_value(secrets_content, "EXCLUDED_ACCOUNTS", self.var_excluded_accounts.get())
                 secrets_content = replace_value(secrets_content, "GAME_TITLE", self.var_game_title.get())
@@ -691,7 +696,7 @@ class BotGUI:
 
             logger = logging.getLogger("gui_bot")
             logger.info("=" * 50)
-            logger.info("AIコメント太郎 v3.24 を起動します")
+            logger.info("AIコメント太郎 v3.25 を起動します")
             logger.info(f"チャンネル: #{config.CHANNEL_NAME}")
             logger.info(f"音声認識: Google Web Speech API（日本語）")
             logger.info(f"コメント生成: Gemini API ({config.GEMINI_MODEL})")

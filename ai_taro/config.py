@@ -10,7 +10,7 @@ try:
         BOT_NICK, BOT_TOKEN, CHANNEL_NAME, GEMINI_API_KEY,
         AI_NAME, VIEWER_COMMAND_PREFIX,
         MICROPHONE_INDEX, SCREEN_MONITOR_INDEX, GAME_TITLE,
-        EXCLUDED_ACCOUNTS
+        EXCLUDED_ACCOUNTS, STREAMER_NAME
     )
 except ImportError:
     raise RuntimeError(
@@ -59,7 +59,7 @@ MAX_SPEECH_CONTEXT_CHARS = 500
 # ============================================================
 # ゲーム画面認識設定
 # ============================================================
-SCREEN_RECOGNITION_ENABLED = True
+SCREEN_RECOGNITION_ENABLED = False  # v3.25: デフォルト無効化（画面認識の精度問題のため）
 SCREEN_CAPTURE_INTERVAL = 300
 
 # ============================================================
