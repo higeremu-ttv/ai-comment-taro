@@ -1,5 +1,5 @@
 """
-AIコメント太郎 - GUI管理アプリ v3.28
+AIコメント太郎 - GUI管理アプリ v3.29
 tkinterを使ったデスクトップGUIアプリです。
 このファイルを実行するとGUIが起動します: python gui_app.py
 """
@@ -26,7 +26,7 @@ class QueueHandler(logging.Handler):
 class BotGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("AIコメント太郎 v3.28")
+        self.root.title("AIコメント太郎 v3.29")
         self.root.geometry("820x660")
         self.root.resizable(True, True)
         self.root.configure(bg="#1a1a2e")
@@ -121,7 +121,7 @@ class BotGUI:
         header = tk.Frame(self.root, bg=self.colors["bg"], pady=10)
         header.pack(fill="x", padx=16)
 
-        tk.Label(header, text="🎮  AIコメント太郎  v3.28",
+        tk.Label(header, text="🎮  AIコメント太郎  v3.29",
                  bg=self.colors["bg"], fg=self.colors["text"],
                  font=("Yu Gothic UI", 16, "bold")).pack(side="left")
 
@@ -701,7 +701,7 @@ class BotGUI:
 
             logger = logging.getLogger("gui_bot")
             logger.info("=" * 50)
-            logger.info("AIコメント太郎 v3.28 を起動します")
+            logger.info("AIコメント太郎 v3.29 を起動します")
             logger.info(f"チャンネル: #{config.CHANNEL_NAME}")
             logger.info(f"音声認識: Google Web Speech API（日本語）")
             logger.info(f"コメント生成: Gemini API ({config.GEMINI_MODEL})")
@@ -974,6 +974,15 @@ class BotGUI:
         if not self.bot_running:
             return
         self._append_log("停止中...", "INFO")
+
+        # プロフィールを保存（成長型プロフィール）
+        if self.bot_instance and self.bot_instance.get("comment_gen"):
+            try:
+                self.bot_instance["comment_gen"].reset_history()
+                self._append_log("✓ プロフィールを保存しました", "INFO")
+            except Exception as e:
+                self._append_log(f"プロフィール保存失敗: {e}", "WARNING")
+
         self.bot_running = False
         self.root.after(2000, lambda: self._append_log("✓ Botを停止しました", "INFO") if not self.bot_running else None)
 
