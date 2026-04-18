@@ -329,7 +329,11 @@ class TwitchModule:
     def stop(self):
         """Twitch botを停止する"""
         if self._bot and self._loop:
-            asyncio.run_coroutine_threadsafe(self._bot.close(), self._loop)
+            try:
+                future = asyncio.run_coroutine_threadsafe(self._bot.close(), self._loop)
+                future.result(timeout=5)  # 切断完了まで最大5秒待機
+            except Exception as e:
+                logger.debug(f"Twitch切断時のエラー（無視）: {e}")
         logger.info("Twitch連携モジュールを停止しました")
 
     @property

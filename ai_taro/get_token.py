@@ -4,7 +4,8 @@ botアカウントのOAuthトークンを取得するための手順を案内し
 """
 
 import webbrowser
-import sys
+import re
+import os
 
 
 def main():
@@ -18,7 +19,6 @@ def main():
     print("【重要】以下の手順は、botアカウントでブラウザにログインした状態で行ってください。")
     print("（メインアカウントではなく、bot用に作成したアカウントでログイン）")
     print()
-
     print("手順1: Twitch Token Generator を開きます")
     print("  URL: https://twitchtokengenerator.com/")
     print()
@@ -36,56 +36,47 @@ def main():
     print("  3. アクセスを許可")
     print("  4. 表示された「Access Token」をコピー")
     print()
-    print("手順3: コピーしたトークンを config.py に貼り付けます")
-    print("  config.py の BOT_TOKEN の行を以下のように変更してください:")
-    print()
-    print('  BOT_TOKEN = "oauth:ここにコピーしたトークンを貼り付け"')
-    print()
-    print("  ※ 「oauth:」は自動で付いていない場合は手動で追加してください")
-    print()
 
     token = input("取得したトークンをここに貼り付けてください（省略可）: ").strip()
 
     if token:
-        # oauth:プレフィックスの処理
-        if not token.startswith("oauth:"):
-            token = f"oauth:{token}"
+        # oauth:プレフィックスを除去（secrets.pyにはトークン文字列のみ保存）
+        token = token.replace("oauth:", "").strip()
 
         print()
-        print("config.py に以下の行をコピーして貼り付けてください:")
+        print("secrets.py に以下の行をコピーして貼り付けてください:")
         print()
         print(f'BOT_TOKEN = "{token}"')
         print()
 
-        # 自動書き込みの確認
-        update = input("config.py を自動で更新しますか？ (y/N): ").strip().lower()
-        if update == "y":
-            try:
-                with open("config.py", "r", encoding="utf-8") as f:
-                    content = f.read()
+        # secrets.pyに自動書き込み
+        secrets_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "secrets.py")
+        if os.path.exists(secrets_path):
+            update = input("secrets.py を自動で更新しますか？ (y/N): ").strip().lower()
+            if update == "y":
+                try:
+                    with open(secrets_path, "r", encoding="utf-8") as f:
+                        content = f.read()
 
-                # トークンを置換
-                import re
-                new_content = re.sub(
-                    r'BOT_TOKEN\s*=\s*"[^"]*"',
-                    f'BOT_TOKEN = "{token}"',
-                    content
-                )
+                    new_content = re.sub(
+                        r'BOT_TOKEN\s*=\s*"[^"]*"',
+                        f'BOT_TOKEN = "{token}"',
+                        content
+                    )
 
-                with open("config.py", "w", encoding="utf-8") as f:
-                    f.write(new_content)
+                    with open(secrets_path, "w", encoding="utf-8") as f:
+                        f.write(new_content)
 
-                print("✓ config.py を更新しました！")
-            except Exception as e:
-                print(f"✗ config.py の更新に失敗しました: {e}")
-                print("  手動で更新してください。")
+                    print("✓ secrets.py を更新しました！")
+                except Exception as e:
+                    print(f"✗ secrets.py の更新に失敗しました: {e}")
+                    print("  手動で更新してください。")
+        else:
+            print("secrets.py が見つかりません。secrets_sample.py をコピーして作成してください。")
 
     print()
     print("次のステップ:")
-    print("  1. config.py の BOT_NICK にbotアカウントのユーザー名を設定")
-    print("  2. config.py の CHANNEL_NAME にあなたのチャンネル名を設定")
-    print("  3. python test_ollama.py でセットアップを確認")
-    print("  4. python main.py でbotを起動")
+    print("  GUIを起動して設定タブから各項目を確認・保存してください。")
     print()
 
 

@@ -163,7 +163,8 @@ class CommentGenerator:
     def reset_history(self):
         # 配信終了時にプロフィールを更新
         if self._profile_manager and self._conversation_history:
-            self._profile_manager.update_from_conversation(self._conversation_history)
+            api_key = getattr(self.config, 'GEMINI_API_KEY', '')
+            self._profile_manager.update_from_conversation(self._conversation_history, api_key)
 
         self._conversation_history = []
         self._last_comments = []
