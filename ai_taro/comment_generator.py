@@ -95,7 +95,8 @@ class CommentGenerator:
 - 毎回異なる語尾・表現・切り口を使うこと（同じパターンの繰り返しは禁止）
 - 語尾のバリエーション：「〜だよ」「〜じゃん」「〜だよね」「〜かな」「〜じゃない？」「〜だろ」「〜だと思う」「〜じゃないの」等
 - 単なる相槌（「なるほど」だけ、「そうですね」だけ）は避けること
-- 「感想・共感」＋「質問や意見」の2段構成が理想"""
+- 「感想・共感」＋「質問や意見」の2段構成が理想
+- 質問の内容が具体的でなかったり、情報が足りなくて答えられない場合は、知ったかぶりをせず、友達口調で具体的に聞き返すこと"""
 
     def __init__(self, config):
         self.config = config
@@ -399,7 +400,7 @@ class CommentGenerator:
             # 検索キーワードが含まれていたら検索モード
             if self._needs_search(speech_text):
                 result = self._call_gemini_with_search(
-                    f"「{speech_text}」という質問に対して、検索結果を元に20文字以内で友達口調で簡潔に答えてください。"
+                    f"「{speech_text}」という質問に対して、検索結果を元に20文字以内で友達口調で簡潔に答えてください。情報が足りない場合は知ったかぶりせず友達口調で聞き返してください。"
                 )
                 if result:
                     return result
@@ -408,7 +409,7 @@ class CommentGenerator:
             # 検索キーワードが含まれていたら検索モード
             if self._needs_search(speech_text):
                 result = self._call_gemini_with_search(
-                    f"「{speech_text}」という質問に対して、検索結果を元に20文字以内で友達口調で簡潔に答えてください。"
+                    f"「{speech_text}」という質問に対して、検索結果を元に20文字以内で友達口調で簡潔に答えてください。情報が足りない場合は知ったかぶりせず友達口調で聞き返してください。"
                 )
                 if result:
                     return result
@@ -450,7 +451,7 @@ class CommentGenerator:
         if self._is_search_trigger(speech_text):
             logger.info(f"[検索モード] '{speech_text}' に検索キーワードを検出")
             result = self._call_gemini(
-                f"配信者が「{speech_text}」と言いました。検索結果を元に20文字以内で友達口調で簡潔に答えてください。",
+                f"配信者が「{speech_text}」と言いました。検索結果を元に20文字以内で友達口調で簡潔に答えてください。情報が足りない場合は知ったかぶりせず友達口調で聞き返してください。",
                 use_search=True
             )
             if result:
