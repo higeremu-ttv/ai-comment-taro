@@ -1,5 +1,5 @@
 """
-AIコメント太郎 - GUI管理アプリ v3.30
+AIコメント太郎 - GUI管理アプリ v3.33
 tkinterを使ったデスクトップGUIアプリです。
 このファイルを実行するとGUIが起動します: python gui_app.py
 """
@@ -26,7 +26,7 @@ class QueueHandler(logging.Handler):
 class BotGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("AIコメント太郎 v3.30")
+        self.root.title("AIコメント太郎 v3.33")
         self.root.geometry("820x660")
         self.root.resizable(True, True)
         self.root.configure(bg="#1a1a2e")
@@ -121,7 +121,7 @@ class BotGUI:
         header = tk.Frame(self.root, bg=self.colors["bg"], pady=10)
         header.pack(fill="x", padx=16)
 
-        tk.Label(header, text="🎮  AIコメント太郎  v3.30",
+        tk.Label(header, text="🎮  AIコメント太郎  v3.33",
                  bg=self.colors["bg"], fg=self.colors["text"],
                  font=("Yu Gothic UI", 16, "bold")).pack(side="left")
 
@@ -701,7 +701,7 @@ class BotGUI:
 
             logger = logging.getLogger("gui_bot")
             logger.info("=" * 50)
-            logger.info("AIコメント太郎 v3.30 を起動します")
+            logger.info("AIコメント太郎 v3.33 を起動します")
             logger.info(f"チャンネル: #{config.CHANNEL_NAME}")
             logger.info(f"音声認識: Google Web Speech API（日本語）")
             logger.info(f"コメント生成: Gemini API ({config.GEMINI_MODEL})")
@@ -884,6 +884,29 @@ class BotGUI:
 
             twitch.set_viewer_command_callback(on_viewer_command)
 
+            # 視聴者コメント・ボット通知への反応コールバック
+            last_viewer_reaction_time = [0.0]
+
+            def on_viewer_comment(content, username, is_bot=False):
+                if not getattr(config, 'VIEWER_COMMENT_REACTION_ENABLED', True):
+                    return
+                import time as _time
+                now = _time.time()
+                cooldown = getattr(config, 'VIEWER_COMMENT_REACTION_COOLDOWN', 120)
+                if now - last_viewer_reaction_time[0] < cooldown:
+                    return
+                trigger_label = "ボット通知" if is_bot else "視聴者コメント"
+                logger.info(f"[{trigger_label}反応] {username}: {content}")
+                prompt = f"Twitchチャットに「{username}」が「{content}」と書きました。これに対して視聴者として自然に1文で反応してください。日本語のみ・文章を最後まで書き切ること。"
+                comment = comment_gen._call_gemini(prompt)
+                if comment:
+                    last_viewer_reaction_time[0] = now
+                    logger.info(f"[{trigger_label}] → {comment}")
+                    self.log_queue.put(f"COMMENT:{comment}")
+                    twitch.send_comment(comment)
+
+            twitch.set_viewer_comment_callback(on_viewer_comment)
+
             audio.set_speech_callback(on_speech)
             audio.set_silence_callback(on_silence)
             audio.set_unrecognized_callback(on_unrecognized)
@@ -895,7 +918,7 @@ class BotGUI:
             # 配信情報をTwitch APIから取得
             stream_info = twitch.get_stream_info()
             if stream_info:
-                generator.set_stream_info(stream_info)
+                comment_gen.set_stream_info(stream_info)
                 if stream_info.get('game_name'):
                     screen._stream_game_name = stream_info['game_name']
                     logger.info(f"📡 配信情報取得成功 - ゲーム: {stream_info['game_name']}")
