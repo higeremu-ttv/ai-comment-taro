@@ -92,30 +92,44 @@ class TwitchModule:
     def get_stream_info(self) -> dict:
         """
         Twitch APIから配信情報（タイトル・ゲーム名）を取得する。
-        配信者のOAuthトークンを使用。
+        Client ID + Client Secret でApp Access Tokenを取得して使用。
         失敗した場合は空dictを返す。
         """
         try:
             import urllib.request
+            import urllib.parse
             import json
 
             channel_name = getattr(self.config, 'CHANNEL_NAME', '')
-            # 配信者トークンを優先、なければbotトークンで試みる
-            token = getattr(self.config, 'STREAMER_TOKEN', '').replace('oauth:', '')
-            if not token:
-                token = getattr(self.config, 'BOT_TOKEN', '').replace('oauth:', '')
+            client_id = getattr(self.config, 'TWITCH_CLIENT_ID', '')
+            client_secret = getattr(self.config, 'TWITCH_CLIENT_SECRET', '')
 
-            if not channel_name or not token:
-                logger.info("📡 配信情報取得スキップ（トークン未設定）")
+            if not channel_name or not client_id or not client_secret:
+                logger.info("📡 配信情報取得スキップ（Client IDまたはClient Secret未設定）")
                 return {}
 
+            # Step1: App Access Tokenを取得
+            token_url = "https://id.twitch.tv/oauth2/token"
+            token_data = urllib.parse.urlencode({
+                'client_id': client_id,
+                'client_secret': client_secret,
+                'grant_type': 'client_credentials'
+            }).encode('utf-8')
+            token_req = urllib.request.Request(token_url, data=token_data)
+            with urllib.request.urlopen(token_req, timeout=5) as r:
+                token_info = json.loads(r.read().decode())
+            access_token = token_info.get('access_token', '')
+            if not access_token:
+                logger.info("📡 App Access Token取得失敗")
+                return {}
+
+            # Step2: 配信情報を取得
             url = f"https://api.twitch.tv/helix/streams?user_login={channel_name}"
             req = urllib.request.Request(url)
-            req.add_header('Authorization', f'Bearer {token}')
-            req.add_header('Client-Id', 'kimne78kx3ncx6brgo4mv6wki5h1ko')
-
-            with urllib.request.urlopen(req, timeout=5) as response:
-                data = json.loads(response.read().decode())
+            req.add_header('Authorization', f'Bearer {access_token}')
+            req.add_header('Client-Id', client_id)
+            with urllib.request.urlopen(req, timeout=5) as r:
+                data = json.loads(r.read().decode())
 
             streams = data.get('data', [])
             if not streams:

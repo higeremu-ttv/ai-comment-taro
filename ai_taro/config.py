@@ -34,6 +34,8 @@ SCREEN_MONITOR_INDEX = _get("SCREEN_MONITOR_INDEX", 1)
 EXCLUDED_ACCOUNTS = _get("EXCLUDED_ACCOUNTS", "moobot,fossabot")
 STREAMER_NAME = _get("STREAMER_NAME", "")
 STREAMER_TOKEN = _get("STREAMER_TOKEN", "")
+TWITCH_CLIENT_ID = _get("TWITCH_CLIENT_ID", "")
+TWITCH_CLIENT_SECRET = _get("TWITCH_CLIENT_SECRET", "")
 REACTION_BOT_ACCOUNTS = _get("REACTION_BOT_ACCOUNTS", "nightbot,streamelements")
 
 # ============================================================
