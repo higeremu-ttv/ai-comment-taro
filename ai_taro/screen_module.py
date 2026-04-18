@@ -48,6 +48,10 @@ class ScreenModule:
         # 前回の画面状況（変化検知用）
         self._previous_description = ""
 
+        # 過疎時トリガー用の外部参照（外部からセットする）
+        self.audio_module = None
+        self.twitch_module = None
+
         # ゲーム設定JSONを読み込む
         self._game_config = self._load_game_config()
 
@@ -326,15 +330,42 @@ class ScreenModule:
                 logger.warning(f"画面解析エラー（スキップ）: {e}")
             return None
 
+    def _is_sparse_condition(self) -> bool:
+        """過疎条件を満たしているか確認する（全条件が揃ったときのみTrue）"""
+        now = time.time()
+        silence_threshold = getattr(self.config, 'SCREEN_SPARSE_SILENCE', 180)
+        chat_threshold = getattr(self.config, 'SCREEN_SPARSE_CHAT', 180)
+        comment_threshold = getattr(self.config, 'SCREEN_SPARSE_COMMENT', 120)
+
+        # 音声認識なしの確認
+        if self.audio_module:
+            speech_silence = self.audio_module.get_seconds_since_last_speech()
+            if speech_silence < silence_threshold:
+                return False
+
+        # チャットなしの確認
+        if self.twitch_module:
+            last_chat = self.twitch_module.get_last_chat_time()
+            if last_chat > 0 and (now - last_chat) < chat_threshold:
+                return False
+
+        # コメント太郎の最後の発言からの時間確認
+        if self.comment_generator:
+            last_comment = self.comment_generator._last_comment_time
+            if last_comment > 0 and (now - last_comment) < comment_threshold:
+                return False
+
+        return True
+
     def _screen_capture_loop(self):
-        """画面キャプチャのメインループ（別スレッドで実行）"""
-        logger.info(f"画面認識モジュールを起動しました（Gemini API、{self._capture_interval}秒間隔）")
+        """画面キャプチャのメインループ（過疎時トリガー方式）"""
+        logger.info("画面認識モジュールを起動しました（過疎時トリガー方式）")
 
         while self.is_running:
             current_time = time.time()
 
-            # 設定した間隔ごとにキャプチャ
-            if current_time - self._last_capture_time >= self._capture_interval:
+            # 過疎条件が揃ったときだけキャプチャ
+            if self._is_sparse_condition() and current_time - self._last_capture_time >= self._capture_interval:
                 # 排他制御：コメント生成中はスキップ
                 if self.comment_generator is not None and self.comment_generator.is_generating:
                     logger.info("コメント生成中のため画面認識のAPI呼び出しをスキップします")

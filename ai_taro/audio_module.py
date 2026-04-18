@@ -78,6 +78,36 @@ class AudioModule:
             return True
         return False
 
+    def _is_valid_speech(self, text: str) -> tuple:
+        """
+        Geminiに渡す前にローカルで品質チェックする。
+        Returns: (is_valid: bool, reason: str)
+        """
+        # 日本語文字の比率チェック
+        hiragana = sum(1 for c in text if '\u3040' <= c <= '\u309F')
+        katakana = sum(1 for c in text if '\u30A0' <= c <= '\u30FF')
+        kanji = sum(1 for c in text if '\u4E00' <= c <= '\u9FFF')
+        total = len(text.replace(' ', ''))
+        if total > 0:
+            japanese_ratio = (hiragana + katakana + kanji) / total
+            if japanese_ratio < 0.3:
+                return False, f"日本語比率が低すぎます（{japanese_ratio:.0%}）"
+
+        # 同じ文字の繰り返しパターン検知
+        import re as _re
+        if _re.search(r'(.)\1{4,}', text):
+            return False, "同じ文字の繰り返しを検出"
+
+        # NGワードチェック（Gemini前に弾く）
+        ng_words_str = getattr(self._config_ref, 'NG_WORDS', '') if hasattr(self, '_config_ref') else ''
+        if ng_words_str:
+            ng_words = [w.strip() for w in ng_words_str.split(',') if w.strip()]
+            for word in ng_words:
+                if word in text:
+                    return False, f"NGワード検出: '{word}'"
+
+        return True, ""
+
     def _emit_speech(self, text: str):
         logger.info(f"音声認識結果: {text}")
         self._speech_context.append(text)
@@ -115,7 +145,17 @@ class AudioModule:
                 logger.info(f"[途中切れ待機] '{text}' → {self._merge_wait}秒待機中")
                 return
 
+        # Geminiに渡す前の品質チェック
+        is_valid, reason = self._is_valid_speech(text)
+        if not is_valid:
+            logger.info(f"[前段階フィルター] スキップ: '{text}' - {reason}")
+            return
+
         self._emit_speech(text)
+
+    def set_config(self, config):
+        """configの参照をセット（NGワードチェック用）"""
+        self._config_ref = config
 
     def load_model(self):
         try:

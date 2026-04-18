@@ -75,6 +75,13 @@ class CommentGenerator:
 - 暴力的・攻撃的な表現は一切禁止
 - Twitchの利用規約に違反する可能性がある表現は一切禁止
 
+【Twitchコミュニティガイドライン遵守】
+- 他者への嫌がらせ・ストーキング・脅迫は禁止
+- 年齢・性別・人種・宗教・障害などに基づく差別は禁止
+- 個人情報（本名・住所・電話番号等）の言及は禁止
+- 自傷・自殺を促すような表現は禁止
+- スパム的な繰り返し投稿は禁止
+
 【オウム返し禁止】
 - 配信者の発言をそのまま繰り返すことは絶対禁止
 - 「〜って言ってたけど」「〜なんだね」「〜ってことか」など発言を繰り返すパターンは使わない
@@ -97,6 +104,17 @@ class CommentGenerator:
         self.is_generating = False
         self.api_request_times = []
         self._silence_prompt_index = 0
+        self._stream_info = {}  # Twitchから取得した配信情報
+
+        # 成長型プロフィール
+        try:
+            from profile_manager import ProfileManager
+            import os
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            self._profile_manager = ProfileManager(base_dir)
+        except Exception as e:
+            logger.debug(f"プロフィールマネージャー初期化失敗: {e}")
+            self._profile_manager = None
 
         # 会話ステート
         self._conversation_state = ConversationState.IDLE
@@ -122,15 +140,45 @@ class CommentGenerator:
     def get_system_prompt(self) -> str:
         ai_name = getattr(self.config, 'AI_NAME', 'AIコメント太郎')
         streamer_name = getattr(self.config, 'STREAMER_NAME', '') or '配信者'
-        return self.SYSTEM_PROMPT_TEMPLATE.replace('{ai_name}', ai_name).replace('{streamer_name}', streamer_name)
+        prompt = self.SYSTEM_PROMPT_TEMPLATE.replace('{ai_name}', ai_name).replace('{streamer_name}', streamer_name)
+
+        # 配信情報をプロンプトに追加
+        if self._stream_info:
+            stream_context = "\n【今日の配信情報】\n"
+            if self._stream_info.get('title'):
+                stream_context += f"- 配信タイトル: {self._stream_info['title']}\n"
+            if self._stream_info.get('game_name'):
+                stream_context += f"- プレイ中のゲーム: {self._stream_info['game_name']}\n"
+            prompt += stream_context
+
+        # 学習済みプロフィールを追加
+        if self._profile_manager:
+            profile_text = self._profile_manager.get_prompt_text()
+            if profile_text:
+                prompt += f"\n{profile_text}"
+
+        return prompt
 
     def reset_history(self):
+        # 配信終了時にプロフィールを更新
+        if self._profile_manager and self._conversation_history:
+            self._profile_manager.update_from_conversation(self._conversation_history)
+
         self._conversation_history = []
         self._last_comments = []
         self._conversation_state = ConversationState.IDLE
         self._current_topic_turns = 0
         self._gemini_model = None
+        self._stream_info = {}
         logger.info("会話履歴とモデルをリセットしました")
+
+    def set_stream_info(self, info: dict):
+        """Twitchから取得した配信情報をセットする"""
+        self._stream_info = info
+        if info:
+            logger.info(f"配信情報をセット: {info}")
+        # モデルを再初期化してシステムプロンプトに反映
+        self._gemini_model = None
 
     def _get_gemini_model(self):
         if self._gemini_model is not None:

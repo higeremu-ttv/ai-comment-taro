@@ -34,6 +34,21 @@ class TwitchModule:
         # 視聴者コマンドコールバック（gui_app.pyから設定される）
         self._viewer_command_callback = None
 
+        # 視聴者コメント反応コールバック
+        self._viewer_comment_callback = None
+
+        # 反応するボットアカウント
+        self._reaction_bot_accounts = self._parse_reaction_bot_accounts()
+
+    def set_viewer_comment_callback(self, callback):
+        """視聴者コメントを受け取った時に呼ぶコールバックを設定する"""
+        self._viewer_comment_callback = callback
+
+    def _parse_reaction_bot_accounts(self) -> set:
+        """反応するボットアカウントリストをセットに変換"""
+        raw = getattr(self.config, 'REACTION_BOT_ACCOUNTS', '')
+        return {a.strip().lower() for a in raw.split(',') if a.strip()}
+
     def set_viewer_command_callback(self, callback):
         """視聴者コマンドを受け取った時に呼ぶコールバックを設定する"""
         self._viewer_command_callback = callback
@@ -73,6 +88,48 @@ class TwitchModule:
         if not self._recent_chat_times:
             return 0.0
         return max(self._recent_chat_times)
+
+    def get_stream_info(self) -> dict:
+        """
+        Twitch APIから配信情報（タイトル・ゲーム名）を取得する。
+        失敗した場合は空dictを返す。
+        """
+        try:
+            import urllib.request
+            import json
+
+            channel_name = getattr(self.config, 'CHANNEL_NAME', '')
+            client_id = getattr(self.config, 'TWITCH_CLIENT_ID', '')
+            token = getattr(self.config, 'BOT_TOKEN', '').replace('oauth:', '')
+
+            if not channel_name or not token:
+                return {}
+
+            # ユーザー情報を取得
+            url = f"https://api.twitch.tv/helix/streams?user_login={channel_name}"
+            req = urllib.request.Request(url)
+            req.add_header('Authorization', f'Bearer {token}')
+            req.add_header('Client-Id', client_id) if client_id else None
+
+            with urllib.request.urlopen(req, timeout=5) as response:
+                data = json.loads(response.read().decode())
+
+            streams = data.get('data', [])
+            if not streams:
+                logger.debug("配信情報が取得できませんでした（オフラインまたは権限不足）")
+                return {}
+
+            stream = streams[0]
+            info = {
+                'title': stream.get('title', ''),
+                'game_name': stream.get('game_name', ''),
+            }
+            logger.info(f"配信情報取得: タイトル='{info['title']}' ゲーム='{info['game_name']}'")
+            return info
+
+        except Exception as e:
+            logger.debug(f"配信情報取得失敗（スキップ）: {e}")
+            return {}
 
     def send_comment(self, message: str):
         """
@@ -128,6 +185,21 @@ class TwitchModule:
                         # コメントを記録（除外アカウントは内部でフィルタ）
                         twitch_module_ref.record_chat_message(username)
                         logger.debug(f"他の視聴者コメント受信: {username}: {content}")
+
+                        # ボット通知への反応（nightbot等のお知らせ系）
+                        if twitch_module_ref._viewer_comment_callback:
+                            username_lower = username.lower()
+                            reaction_bots = twitch_module_ref._reaction_bot_accounts
+                            excluded = twitch_module_ref._excluded_accounts
+
+                            if username_lower in reaction_bots:
+                                # 反応ボットのお知らせに反応
+                                logger.info(f"[ボット通知] {username}: {content}")
+                                twitch_module_ref._viewer_comment_callback(content, username, is_bot=True)
+                            elif username_lower not in excluded and content and len(content) >= 4:
+                                # 通常視聴者コメントへの反応
+                                if getattr(config, 'VIEWER_COMMENT_REACTION_ENABLED', True):
+                                    twitch_module_ref._viewer_comment_callback(content, username, is_bot=False)
 
                         # 視聴者コマンドの処理
                         if twitch_module_ref._viewer_command_callback and getattr(config, 'VIEWER_COMMANDS_ENABLED', True):

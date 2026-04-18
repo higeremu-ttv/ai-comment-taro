@@ -1,5 +1,5 @@
 """
-AIコメント太郎 v3.17 - メインコントローラー
+AIコメント太郎 v3.26 - メインコントローラー
 配信中に音声を認識し、自然な日本語コメントを自動投稿するbotです。
 音声認識: Google Web Speech API（高精度・無料）
 コメント生成: Gemini API（gemini-1.5-flash・無料枠あり）
@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)
 
 class TwitchAIBot:
     """
-    AIコメント太郎 v3.17のメインコントローラー。
+    AIコメント太郎 v3.26のメインコントローラー。
     各モジュールを統合し、タイミング制御を行います。
     """
 
@@ -54,6 +54,33 @@ class TwitchAIBot:
 
         # 排他制御のため screen_module に comment_generator の参照をセット
         self.screen.comment_generator = self.generator
+
+        # 過疎時トリガー用の参照をセット
+        self.screen.audio_module = self.audio
+        self.screen.twitch_module = self.twitch
+
+        # 音声認識の前段階フィルター用にconfigをセット
+        self.audio.set_config(cfg)
+
+        # 視聴者コメント反応コールバック
+        self._last_viewer_reaction_time = 0.0
+
+        def _on_viewer_comment(content: str, username: str, is_bot: bool = False):
+            now = __import__('time').time()
+            cooldown = getattr(cfg, 'VIEWER_COMMENT_REACTION_COOLDOWN', 120)
+            if now - self._last_viewer_reaction_time < cooldown:
+                return
+            if not self._can_send_comment():
+                return
+            trigger_type = "bot_notification" if is_bot else "viewer_comment"
+            prompt_text = f"視聴者「{username}」がチャットに「{content}」と書きました。これに対して自然に反応してください。1文で。必ず日本語のみで文章を最後まで書き切ること。"
+            comment = self.generator._call_gemini(prompt_text)
+            if comment:
+                self._send_comment(comment)
+                self._last_viewer_reaction_time = now
+                logger.info(f"[{trigger_type}反応] {username}: {content} → {comment}")
+
+        self.twitch.set_viewer_comment_callback(_on_viewer_comment)
 
         # 画面認識結果が更新されたときにコメントを生成するコールバックをセット
         def _on_screen_updated(description: str):
@@ -183,7 +210,7 @@ class TwitchAIBot:
     def start(self):
         """botを起動する"""
         logger.info("=" * 60)
-        logger.info("AIコメント太郎 v3.17 を起動します")
+        logger.info("AIコメント太郎 v3.26 を起動します")
         logger.info(f"チャンネル: #{cfg.CHANNEL_NAME}")
         logger.info(f"音声認識: Google Web Speech API（日本語）")
         logger.info(f"コメント生成: Gemini API ({cfg.GEMINI_MODEL})")
@@ -203,7 +230,12 @@ class TwitchAIBot:
         # 各モジュールの起動
         logger.info("Twitch接続を開始します...")
         self.twitch.start()
-        time.sleep(3)  # 接続待機
+        time.sleep(3)
+
+        # 配信情報をTwitch APIから取得
+        stream_info = self.twitch.get_stream_info()
+        if stream_info:
+            self.generator.set_stream_info(stream_info)
 
         logger.info("ゲーム画面認識を開始します...")
         self.screen.start()

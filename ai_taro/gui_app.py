@@ -1,5 +1,5 @@
 """
-AIコメント太郎 - GUI管理アプリ v3.25
+AIコメント太郎 - GUI管理アプリ v3.26
 tkinterを使ったデスクトップGUIアプリです。
 このファイルを実行するとGUIが起動します: python gui_app.py
 """
@@ -26,7 +26,7 @@ class QueueHandler(logging.Handler):
 class BotGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("AIコメント太郎 v3.25")
+        self.root.title("AIコメント太郎 v3.26")
         self.root.geometry("820x660")
         self.root.resizable(True, True)
         self.root.configure(bg="#1a1a2e")
@@ -121,7 +121,7 @@ class BotGUI:
         header = tk.Frame(self.root, bg=self.colors["bg"], pady=10)
         header.pack(fill="x", padx=16)
 
-        tk.Label(header, text="🎮  AIコメント太郎  v3.25",
+        tk.Label(header, text="🎮  AIコメント太郎  v3.26",
                  bg=self.colors["bg"], fg=self.colors["text"],
                  font=("Yu Gothic UI", 16, "bold")).pack(side="left")
 
@@ -323,6 +323,8 @@ class BotGUI:
         self.var_retry_count = tk.StringVar()
         self.var_retry_interval = tk.StringVar()
         self.var_chat_mute_enabled = tk.BooleanVar()
+        self.var_viewer_comment_reaction_enabled = tk.BooleanVar()
+        self.var_reaction_bot_accounts = tk.StringVar()
         self.var_chat_threshold = tk.StringVar()
         self.var_chat_window = tk.StringVar()
         self.var_chat_quiet = tk.StringVar()
@@ -429,7 +431,21 @@ class BotGUI:
         make_field(sec4, "静まり判定の秒数", self.var_chat_quiet)
         make_note(sec4, "この秒数間コメントがなければbotが再開する。推奨: 30秒")
         make_field(sec4, "除外アカウント", self.var_excluded_accounts)
-        make_note(sec4, "無視するアカウントをカンマ区切りで入力。例: nightbot,streamelements,moobot")
+        make_note(sec4, "無視するアカウントをカンマ区切りで入力。例: moobot,fossabot")
+
+        # 視聴者コメント反応設定
+        chk_reaction_row = tk.Frame(sec4, bg=self.colors["panel"])
+        chk_reaction_row.pack(fill="x", padx=12, pady=3)
+        tk.Checkbutton(
+            chk_reaction_row, text="他の視聴者コメント・ボット通知に反応する",
+            variable=self.var_viewer_comment_reaction_enabled,
+            bg=self.colors["panel"], fg=self.colors["text"],
+            selectcolor=self.colors["log_bg"],
+            activebackground=self.colors["panel"],
+            font=("Yu Gothic UI", 10)
+        ).pack(side="left")
+        make_field(sec4, "反応するボットアカウント", self.var_reaction_bot_accounts)
+        make_note(sec4, "お知らせ系ボットのみ指定。例: nightbot,streamelements")
 
         # NGワード設定
         sec_ng = make_section("NGワードフィルター設定", color="#d63031")
@@ -513,6 +529,8 @@ class BotGUI:
             self.var_retry_count.set(str(getattr(cfg, "COMMENT_RETRY_COUNT", "2")))
             self.var_retry_interval.set(str(getattr(cfg, "COMMENT_RETRY_INTERVAL", "5")))
             self.var_chat_mute_enabled.set(getattr(cfg, "CHAT_ACTIVITY_MUTE_ENABLED", True))
+            self.var_viewer_comment_reaction_enabled.set(getattr(cfg, "VIEWER_COMMENT_REACTION_ENABLED", True))
+            self.var_reaction_bot_accounts.set(getattr(cfg, "REACTION_BOT_ACCOUNTS", "nightbot,streamelements"))
             self.var_chat_threshold.set(str(getattr(cfg, "CHAT_ACTIVITY_THRESHOLD", "3")))
             self.var_chat_window.set(str(getattr(cfg, "CHAT_ACTIVITY_WINDOW_SECONDS", "60")))
             self.var_chat_quiet.set(str(getattr(cfg, "CHAT_QUIET_RESUME_SECONDS", "30")))
@@ -568,6 +586,10 @@ class BotGUI:
                                     self.var_retry_interval.get(), is_string=False)
             content = replace_value(content, "CHAT_ACTIVITY_MUTE_ENABLED",
                                     str(self.var_chat_mute_enabled.get()), is_string=False)
+            content = replace_value(content, "VIEWER_COMMENT_REACTION_ENABLED",
+                                    str(self.var_viewer_comment_reaction_enabled.get()), is_string=False)
+            content = replace_value(content, "REACTION_BOT_ACCOUNTS",
+                                    self.var_reaction_bot_accounts.get())
             content = replace_value(content, "CHAT_ACTIVITY_THRESHOLD",
                                     self.var_chat_threshold.get(), is_string=False)
             content = replace_value(content, "CHAT_ACTIVITY_WINDOW_SECONDS",
@@ -673,7 +695,7 @@ class BotGUI:
 
             logger = logging.getLogger("gui_bot")
             logger.info("=" * 50)
-            logger.info("AIコメント太郎 v3.25 を起動します")
+            logger.info("AIコメント太郎 v3.26 を起動します")
             logger.info(f"チャンネル: #{config.CHANNEL_NAME}")
             logger.info(f"音声認識: Google Web Speech API（日本語）")
             logger.info(f"コメント生成: Gemini API ({config.GEMINI_MODEL})")
