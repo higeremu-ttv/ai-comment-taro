@@ -63,20 +63,20 @@ class BotGUI:
         style.configure("TLabel",
                         background=self.colors["panel"],
                         foreground=self.colors["text"],
-                        font=("Segoe UI", 10))
+                        font=("Yu Gothic UI", 10))
         style.configure("Title.TLabel",
                         background=self.colors["bg"],
                         foreground=self.colors["text"],
-                        font=("Segoe UI", 14, "bold"))
+                        font=("Yu Gothic UI", 14, "bold"))
         style.configure("Status.TLabel",
                         background=self.colors["panel"],
                         foreground=self.colors["text_dim"],
-                        font=("Segoe UI", 9))
+                        font=("Yu Gothic UI", 9))
         style.configure("TEntry",
                         fieldbackground=self.colors["log_bg"],
                         foreground=self.colors["text"],
                         insertcolor=self.colors["text"],
-                        font=("Segoe UI", 10))
+                        font=("Yu Gothic UI", 10))
         style.configure("TNotebook",
                         background=self.colors["bg"],
                         borderwidth=0)
@@ -84,7 +84,7 @@ class BotGUI:
                         background=self.colors["panel"],
                         foreground=self.colors["text_dim"],
                         padding=[12, 6],
-                        font=("Segoe UI", 10))
+                        font=("Yu Gothic UI", 10))
         style.map("TNotebook.Tab",
                   background=[("selected", self.colors["accent"])],
                   foreground=[("selected", self.colors["text"])])
@@ -123,19 +123,19 @@ class BotGUI:
 
         tk.Label(header, text="🎮  AIコメント太郎  v3.25",
                  bg=self.colors["bg"], fg=self.colors["text"],
-                 font=("Segoe UI", 16, "bold")).pack(side="left")
+                 font=("Yu Gothic UI", 16, "bold")).pack(side="left")
 
         # バージョンバッジ
         tk.Label(header, text="Gemini API",
                  bg=self.colors["gemini"], fg="white",
-                 font=("Segoe UI", 9, "bold"),
+                 font=("Yu Gothic UI", 9, "bold"),
                  padx=8, pady=2).pack(side="left", padx=8)
 
         # ステータスバッジ
         self.status_badge = tk.Label(header, text="● 停止中",
                                      bg=self.colors["bg"],
                                      fg=self.colors["danger"],
-                                     font=("Segoe UI", 10, "bold"))
+                                     font=("Yu Gothic UI", 10, "bold"))
         self.status_badge.pack(side="right", padx=8)
 
         # タブ
@@ -161,7 +161,7 @@ class BotGUI:
         self.start_btn = tk.Button(
             btn_frame, text="▶  Bot 起動",
             bg=self.colors["accent"], fg="white",
-            font=("Segoe UI", 11, "bold"),
+            font=("Yu Gothic UI", 11, "bold"),
             relief="flat", bd=0, padx=24, pady=8,
             activebackground=self.colors["accent_hover"],
             activeforeground="white",
@@ -173,7 +173,7 @@ class BotGUI:
         self.stop_btn = tk.Button(
             btn_frame, text="■  Bot 停止",
             bg=self.colors["border"], fg=self.colors["text_dim"],
-            font=("Segoe UI", 11, "bold"),
+            font=("Yu Gothic UI", 11, "bold"),
             relief="flat", bd=0, padx=24, pady=8,
             activebackground=self.colors["danger"],
             activeforeground="white",
@@ -186,7 +186,7 @@ class BotGUI:
         clear_btn = tk.Button(
             btn_frame, text="🗑  ログ消去",
             bg=self.colors["border"], fg=self.colors["text_dim"],
-            font=("Segoe UI", 10),
+            font=("Yu Gothic UI", 10),
             relief="flat", bd=0, padx=16, pady=8,
             cursor="hand2",
             command=self.clear_log
@@ -197,7 +197,7 @@ class BotGUI:
         screen_test_btn = tk.Button(
             btn_frame, text="📷  画面テスト",
             bg=self.colors["success"], fg="white",
-            font=("Segoe UI", 10, "bold"),
+            font=("Yu Gothic UI", 10, "bold"),
             relief="flat", bd=0, padx=16, pady=8,
             cursor="hand2",
             command=self.test_screen_capture
@@ -210,28 +210,28 @@ class BotGUI:
 
         tk.Label(state_frame, text="会話ステート:",
                  bg=self.colors["panel"], fg=self.colors["text_dim"],
-                 font=("Segoe UI", 9)).pack(side="left", padx=(8, 4))
+                 font=("Yu Gothic UI", 9)).pack(side="left", padx=(8, 4))
 
         self.state_label = tk.Label(state_frame, text="待機中",
                                     bg=self.colors["panel"], fg=self.colors["gemini"],
-                                    font=("Segoe UI", 9, "bold"))
+                                    font=("Yu Gothic UI", 9, "bold"))
         self.state_label.pack(side="left")
 
         self.turns_label = tk.Label(state_frame, text="",
                                     bg=self.colors["panel"], fg=self.colors["text_dim"],
-                                    font=("Segoe UI", 9))
+                                    font=("Yu Gothic UI", 9))
         self.turns_label.pack(side="left", padx=(8, 0))
 
         # APIリクエスト数表示
         tk.Label(state_frame, text="|",
                  bg=self.colors["panel"], fg=self.colors["border"],
-                 font=("Segoe UI", 9)).pack(side="left", padx=(12, 4))
+                 font=("Yu Gothic UI", 9)).pack(side="left", padx=(12, 4))
         tk.Label(state_frame, text="API/分:",
                  bg=self.colors["panel"], fg=self.colors["text_dim"],
-                 font=("Segoe UI", 9)).pack(side="left", padx=(0, 4))
+                 font=("Yu Gothic UI", 9)).pack(side="left", padx=(0, 4))
         self.api_count_label = tk.Label(state_frame, text="0 / 15",
                                         bg=self.colors["panel"], fg=self.colors["text"],
-                                        font=("Segoe UI", 9, "bold"))
+                                        font=("Yu Gothic UI", 9, "bold"))
         self.api_count_label.pack(side="left")
 
         # ログエリア
@@ -240,7 +240,7 @@ class BotGUI:
 
         tk.Label(log_frame, text="ログ",
                  bg=self.colors["bg"], fg=self.colors["text_dim"],
-                 font=("Segoe UI", 9)).pack(anchor="w", pady=(0, 4))
+                 font=("Yu Gothic UI", 9)).pack(anchor="w", pady=(0, 4))
 
         self.log_text = scrolledtext.ScrolledText(
             log_frame,
@@ -283,7 +283,7 @@ class BotGUI:
             label_color = color if color else self.colors["accent"]
             tk.Label(f, text=title,
                      bg=self.colors["panel"], fg=label_color,
-                     font=("Segoe UI", 10, "bold")).pack(anchor="w", padx=12, pady=(8, 4))
+                     font=("Yu Gothic UI", 10, "bold")).pack(anchor="w", padx=12, pady=(8, 4))
             return f
 
         def make_field(parent, label, var, show=""):
@@ -291,18 +291,18 @@ class BotGUI:
             row.pack(fill="x", padx=12, pady=3)
             tk.Label(row, text=label, width=26, anchor="w",
                      bg=self.colors["panel"], fg=self.colors["text"],
-                     font=("Segoe UI", 10)).pack(side="left")
+                     font=("Yu Gothic UI", 10)).pack(side="left")
             e = tk.Entry(row, textvariable=var, show=show,
                          bg=self.colors["log_bg"], fg=self.colors["text"],
                          insertbackground=self.colors["text"],
-                         relief="flat", bd=4, font=("Segoe UI", 10))
+                         relief="flat", bd=4, font=("Yu Gothic UI", 10))
             e.pack(side="left", fill="x", expand=True)
             return e
 
         def make_note(parent, text):
             tk.Label(parent, text=text,
                      bg=self.colors["panel"], fg=self.colors["text_dim"],
-                     font=("Segoe UI", 8), wraplength=620, justify="left"
+                     font=("Yu Gothic UI", 8), wraplength=620, justify="left"
                      ).pack(anchor="w", padx=12, pady=(0, 6))
 
         # 設定変数
@@ -354,17 +354,17 @@ class BotGUI:
         make_field(sec_ai, "AIの名前", self.var_ai_name)
         make_note(sec_ai, "配信者がこの名前で呼びかけると直接会話モードになります。例: 太郎、アリス")
         make_field(sec_ai, "配信者の名前", self.var_streamer_name)
-        make_note(sec_ai, "AIが配信者を呼ぶときに使用します。例: ひげれむ、おじさん")
+        make_note(sec_ai, "AIが配信者を呼ぶときに使用します。例: 配信者名・ニックネームなど")
 
         tokens_row = tk.Frame(sec_ai, bg=self.colors["panel"])
         tokens_row.pack(fill="x", padx=12, pady=3)
         tk.Label(tokens_row, text="コメント最大長", width=26, anchor="w",
                  bg=self.colors["panel"], fg=self.colors["text"],
-                 font=("Segoe UI", 10)).pack(side="left")
+                 font=("Yu Gothic UI", 10)).pack(side="left")
         tokens_combo = ttk.Combobox(
             tokens_row, textvariable=self.var_comment_max_tokens,
             values=["150", "300", "500"],
-            state="readonly", font=("Segoe UI", 10), width=10
+            state="readonly", font=("Yu Gothic UI", 10), width=10
         )
         tokens_combo.pack(side="left")
         make_note(sec_ai, "150: 短め（1文）/ 300: 中文（2〜3文・推奨）/ 500: 長め（3〜5文）")
@@ -402,33 +402,10 @@ class BotGUI:
             bg=self.colors["panel"], fg=self.colors["text"],
             selectcolor=self.colors["log_bg"],
             activebackground=self.colors["panel"],
-            font=("Segoe UI", 10)
+            font=("Yu Gothic UI", 10)
         ).pack(side="left")
         make_field(sec_screen, "画面キャプチャ間隔 (秒)", self.var_screen_interval)
         make_note(sec_screen, "何秒ごとにゲーム画面を解析するか。推奨: 30秒（APIリクエスト節約のため）")
-
-        # ゲームタイトル：games/フォルダのJSONから自動生成プルダウン
-        game_titles = self._load_game_titles()
-        game_row = tk.Frame(sec_screen, bg=self.colors["panel"])
-        game_row.pack(fill="x", padx=12, pady=3)
-        tk.Label(game_row, text="配信ゲームタイトル", width=26, anchor="w",
-                 bg=self.colors["panel"], fg=self.colors["text"],
-                 font=("Segoe UI", 10)).pack(side="left")
-        style = ttk.Style()
-        style.configure("Dark.TCombobox",
-                        fieldbackground=self.colors["panel"],
-                        background=self.colors["panel"],
-                        foreground=self.colors["text"],
-                        selectbackground=self.colors["accent"],
-                        selectforeground="white")
-        game_combo = ttk.Combobox(
-            game_row, textvariable=self.var_game_title,
-            values=game_titles,
-            state="normal", font=("Segoe UI", 10), width=30,
-            style="Dark.TCombobox"
-        )
-        game_combo.pack(side="left", fill="x", expand=True)
-        make_note(sec_screen, "games/フォルダのJSONから自動読み込み。「なし（自動判断）」は汎用プロンプトを使用。")
 
         make_field(sec_screen, "キャプチャするモニター番号", self.var_monitor_index)
         make_note(sec_screen, "1=プライマリ、2=セカンダリ。起動ログに「モニター[1]:...」と表示されます。")
@@ -443,7 +420,7 @@ class BotGUI:
             bg=self.colors["panel"], fg=self.colors["text"],
             selectcolor=self.colors["log_bg"],
             activebackground=self.colors["panel"],
-            font=("Segoe UI", 10)
+            font=("Yu Gothic UI", 10)
         ).pack(side="left")
         make_field(sec4, "活発判定の件数", self.var_chat_threshold)
         make_note(sec4, "直近の時間内にこの件数以上のコメントがあればbotが黙る。推奨: 3")
@@ -469,7 +446,7 @@ class BotGUI:
             bg=self.colors["panel"], fg=self.colors["text"],
             selectcolor=self.colors["log_bg"],
             activebackground=self.colors["panel"],
-            font=("Segoe UI", 10)
+            font=("Yu Gothic UI", 10)
         ).pack(side="left")
         make_field(sec_cmd, "コマンドプレフィックス", self.var_viewer_command_prefix)
         make_note(sec_cmd, "視聴者がAIに質問するコマンド。例: !太郎 と入力すると !太郎 こんにちは で質問できます")
@@ -481,7 +458,7 @@ class BotGUI:
             bg=self.colors["panel"], fg=self.colors["text"],
             selectcolor=self.colors["log_bg"],
             activebackground=self.colors["panel"],
-            font=("Segoe UI", 10)
+            font=("Yu Gothic UI", 10)
         ).pack(side="left")
         chk_status_row = tk.Frame(sec_cmd, bg=self.colors["panel"])
         chk_status_row.pack(fill="x", padx=12, pady=3)
@@ -491,7 +468,7 @@ class BotGUI:
             bg=self.colors["panel"], fg=self.colors["text"],
             selectcolor=self.colors["log_bg"],
             activebackground=self.colors["panel"],
-            font=("Segoe UI", 10)
+            font=("Yu Gothic UI", 10)
         ).pack(side="left")
 
         # 保存ボタン
@@ -501,7 +478,7 @@ class BotGUI:
         tk.Button(
             btn_row, text="💾  設定を保存",
             bg=self.colors["success"], fg="white",
-            font=("Segoe UI", 11, "bold"),
+            font=("Yu Gothic UI", 11, "bold"),
             relief="flat", bd=0, padx=24, pady=8,
             cursor="hand2",
             command=self.save_settings

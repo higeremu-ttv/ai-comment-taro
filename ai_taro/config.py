@@ -10,7 +10,7 @@ try:
         BOT_NICK, BOT_TOKEN, CHANNEL_NAME, GEMINI_API_KEY,
         AI_NAME, VIEWER_COMMAND_PREFIX,
         MICROPHONE_INDEX, SCREEN_MONITOR_INDEX, GAME_TITLE,
-        EXCLUDED_ACCOUNTS, STREAMER_NAME
+        EXCLUDED_ACCOUNTS
     )
 except ImportError:
     raise RuntimeError(
@@ -18,6 +18,12 @@ except ImportError:
         "secrets_sample.py をコピーして secrets.py を作成し、\n"
         "APIキー・トークン等を設定してください。"
     )
+
+# STREAMER_NAMEは任意項目（secrets.pyになくてもOK）
+try:
+    from secrets import STREAMER_NAME
+except ImportError:
+    STREAMER_NAME = ""
 
 # ============================================================
 # Gemini API 設定
@@ -74,7 +80,7 @@ CHAT_QUIET_RESUME_SECONDS = 30
 # AI キャラクター設定
 # ============================================================
 AI_DIRECT_MAX_TOKENS = 300
-COMMENT_MAX_TOKENS = 120
+COMMENT_MAX_TOKENS = 500
 
 # ============================================================
 # 視聴者コマンド設定

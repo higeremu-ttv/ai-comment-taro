@@ -33,7 +33,7 @@ GEMINI_API_KEY = "your_gemini_api_key_here"
 AI_NAME = "AIコメント太郎"
 
 # 配信者の名前（コメント太郎が配信者を呼ぶときに使用）
-STREAMER_NAME = "ひげれむ"
+STREAMER_NAME = "あなたの配信者名"
 
 # 視聴者コマンドプレフィックス（例: "!人工知能 こんにちは"）
 VIEWER_COMMAND_PREFIX = "!AIコメント太郎"

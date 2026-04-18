@@ -121,7 +121,7 @@ class CommentGenerator:
 
     def get_system_prompt(self) -> str:
         ai_name = getattr(self.config, 'AI_NAME', 'AIコメント太郎')
-        streamer_name = getattr(self.config, 'STREAMER_NAME', 'ひげれむ')
+        streamer_name = getattr(self.config, 'STREAMER_NAME', '') or '配信者'
         return self.SYSTEM_PROMPT_TEMPLATE.replace('{ai_name}', ai_name).replace('{streamer_name}', streamer_name)
 
     def reset_history(self):
