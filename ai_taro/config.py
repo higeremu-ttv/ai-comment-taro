@@ -24,7 +24,6 @@ def _get(key, default=None):
     return getattr(_s, key, default)
 
 BOT_NICK = _get("BOT_NICK", "")
-BOT_TOKEN = _get("BOT_TOKEN", "")
 CHANNEL_NAME = _get("CHANNEL_NAME", "")
 GEMINI_API_KEY = _get("GEMINI_API_KEY", "")
 AI_NAME = _get("AI_NAME", "AIコメント太郎")
@@ -33,10 +32,21 @@ MICROPHONE_INDEX = _get("MICROPHONE_INDEX", None)
 SCREEN_MONITOR_INDEX = _get("SCREEN_MONITOR_INDEX", 1)
 EXCLUDED_ACCOUNTS = _get("EXCLUDED_ACCOUNTS", "moobot,fossabot")
 STREAMER_NAME = _get("STREAMER_NAME", "")
-STREAMER_TOKEN = _get("STREAMER_TOKEN", "")
-TWITCH_CLIENT_ID = _get("TWITCH_CLIENT_ID", "")
-TWITCH_CLIENT_SECRET = _get("TWITCH_CLIENT_SECRET", "")
 REACTION_BOT_ACCOUNTS = _get("REACTION_BOT_ACCOUNTS", "nightbot,streamelements")
+
+# トークン・ID類は入力形式を自動統一
+# BOT_TOKEN: Twitch IRC接続用 → oauth:プレフィックスを自動付与
+_bot_token = _get("BOT_TOKEN", "").strip()
+_bot_token = _bot_token.replace("Bearer ", "").replace("bearer ", "")
+BOT_TOKEN = "oauth:" + _bot_token.replace("oauth:", "") if _bot_token else ""
+
+# STREAMER_TOKEN: Helix API用 → oauth:/Bearer を自動除去（生トークンのみ）
+_streamer_token = _get("STREAMER_TOKEN", "").strip()
+STREAMER_TOKEN = _streamer_token.replace("oauth:", "").replace("Bearer ", "").replace("bearer ", "")
+
+# TWITCH_CLIENT_ID / SECRET: 空白・改行を除去
+TWITCH_CLIENT_ID = _get("TWITCH_CLIENT_ID", "").strip()
+TWITCH_CLIENT_SECRET = _get("TWITCH_CLIENT_SECRET", "").strip()
 
 # ============================================================
 # Gemini API 設定
