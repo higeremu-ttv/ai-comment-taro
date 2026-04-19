@@ -94,7 +94,7 @@ CHAT_QUIET_RESUME_SECONDS = 30
 # AI キャラクター設定
 # ============================================================
 AI_DIRECT_MAX_TOKENS = 300
-COMMENT_MAX_TOKENS = 120
+COMMENT_MAX_TOKENS = 500
 
 # ============================================================
 # 視聴者コマンド設定
@@ -140,7 +140,7 @@ VIEWER_COMMENT_REACTION_ENABLED = True
 VIEWER_COMMENT_REACTION_COOLDOWN = 120
 
 # 反応するボットアカウント（お知らせ系）カンマ区切り
-REACTION_BOT_ACCOUNTS = "nightbot,streamelements"
+REACTION_BOT_ACCOUNTS = "nightbot,streamelements,frostytools"
 
 # 画面認識の過疎時トリガー設定
 SCREEN_SPARSE_SILENCE = 180   # 音声認識なし○秒以上

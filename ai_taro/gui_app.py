@@ -1,5 +1,5 @@
 """
-AIコメント太郎 - GUI管理アプリ v3.38
+AIコメント太郎 - GUI管理アプリ v3.39
 tkinterを使ったデスクトップGUIアプリです。
 このファイルを実行するとGUIが起動します: python gui_app.py
 """
@@ -26,7 +26,7 @@ class QueueHandler(logging.Handler):
 class BotGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("AIコメント太郎 v3.38")
+        self.root.title("AIコメント太郎 v3.39")
         self.root.geometry("820x660")
         self.root.resizable(True, True)
         self.root.configure(bg="#1a1a2e")
@@ -696,7 +696,7 @@ class BotGUI:
 
             logger = logging.getLogger("gui_bot")
             logger.info("=" * 50)
-            logger.info("AIコメント太郎 v3.38 を起動します")
+            logger.info("AIコメント太郎 v3.39 を起動します")
             logger.info(f"チャンネル: #{config.CHANNEL_NAME}")
             logger.info(f"音声認識: Google Web Speech API（日本語）")
             logger.info(f"コメント生成: Gemini API ({config.GEMINI_MODEL})")
@@ -761,6 +761,11 @@ class BotGUI:
             def process_speech_buffer():
                 """バッファに溜まった発言をまとめて処理する"""
                 if not speech_buffer:
+                    return
+
+                # Bot停止後は処理しない
+                if not self.bot_running:
+                    speech_buffer.clear()
                     return
 
                 combined_text = " ".join(speech_buffer)
