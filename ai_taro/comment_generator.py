@@ -115,6 +115,10 @@ class CommentGenerator:
             import os
             base_dir = os.path.dirname(os.path.abspath(__file__))
             self._profile_manager = ProfileManager(base_dir)
+            # 配信者名をプロフィールに設定
+            streamer_name = getattr(config, 'STREAMER_NAME', '')
+            if streamer_name:
+                self._profile_manager.set_streamer_name(streamer_name)
         except Exception as e:
             logger.debug(f"プロフィールマネージャー初期化失敗: {e}")
             self._profile_manager = None

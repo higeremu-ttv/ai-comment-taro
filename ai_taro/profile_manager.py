@@ -71,12 +71,23 @@ class ProfileManager:
             friends.append(name)
             logger.info(f"仲間を追加: {name}")
 
+    def set_streamer_name(self, name: str):
+        """配信者名をプロフィールに設定する"""
+        if name and not self._profile.get('streamer_name'):
+            self._profile['streamer_name'] = name
+
     def get_prompt_text(self) -> str:
         """プロンプトに追加する学習済み情報テキストを返す"""
         if not self._profile:
             return ""
 
         lines = []
+
+        # 配信者の別名
+        aliases = self._profile.get('streamer_aliases', [])
+        streamer_name = self._profile.get('streamer_name', '')
+        if aliases and streamer_name:
+            lines.append(f"- 配信者の別名: {', '.join(aliases)}（全て{streamer_name}と同一人物）")
 
         friends = self._profile.get('known_friends', [])
         if friends:
