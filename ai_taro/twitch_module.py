@@ -331,9 +331,12 @@ class TwitchModule:
         if self._bot and self._loop:
             try:
                 future = asyncio.run_coroutine_threadsafe(self._bot.close(), self._loop)
-                future.result(timeout=5)  # 切断完了まで最大5秒待機
+                future.result(timeout=5)
             except Exception as e:
                 logger.debug(f"Twitch切断時のエラー（無視）: {e}")
+        # asyncioの未処理例外ログを抑制
+        if self._loop and not self._loop.is_closed():
+            self._loop.set_exception_handler(lambda loop, ctx: None)
         logger.info("Twitch連携モジュールを停止しました")
 
     @property
