@@ -76,6 +76,15 @@ class ProfileManager:
         if name and not self._profile.get('streamer_name'):
             self._profile['streamer_name'] = name
 
+    def add_streamer_info(self, key: str, value: str):
+        """配信者の情報を追加する（ヒアリング結果）"""
+        if not key or not value or len(value) < 2:
+            return
+        info = self._profile.setdefault('streamer_info', {})
+        info[key] = value[:50]  # 50文字以内で保存
+        logger.info(f"配信者情報を記録: {key} = {value[:20]}")
+        self.save()
+
     def get_prompt_text(self) -> str:
         """プロンプトに追加する学習済み情報テキストを返す"""
         if not self._profile:
@@ -88,6 +97,12 @@ class ProfileManager:
         streamer_name = self._profile.get('streamer_name', '')
         if aliases and streamer_name:
             lines.append(f"- 配信者の別名: {', '.join(aliases)}（全て{streamer_name}と同一人物）")
+
+        # 配信者の情報（ヒアリング結果）
+        streamer_info = self._profile.get('streamer_info', {})
+        if streamer_info:
+            info_text = '、'.join([f"{k}:{v}" for k, v in list(streamer_info.items())[-5:]])
+            lines.append(f"- 配信者について知っていること: {info_text}")
 
         friends = self._profile.get('known_friends', [])
         if friends:

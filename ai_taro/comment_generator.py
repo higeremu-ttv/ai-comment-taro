@@ -144,6 +144,22 @@ class CommentGenerator:
             "今日ここまでで一番よかった瞬間は？",
         ]
 
+        # ヒアリング質問リスト（趣味・好み系のみ・個人情報系は除外）
+        self.HEARING_QUESTIONS = [
+            "好きな食べ物って何？",
+            "好きな音楽とかある？",
+            "フォートナイト以外で好きなゲームって何かある？",
+            "休みの日って何してることが多いの？",
+            "最近観た映画とかドラマって何かある？",
+            "好きなスポーツとかある？",
+            "コーヒーと紅茶どっち派？",
+            "猫派？犬派？",
+            "朝型？夜型？",
+            "最近おいしかったもの何かある？",
+        ]
+        self._last_hearing_time = 0.0
+        self._hearing_cooldown = 600  # ヒアリング質問は10分に1回まで
+
     def get_system_prompt(self) -> str:
         ai_name = getattr(self.config, 'AI_NAME', 'AIコメント太郎')
         streamer_name = getattr(self.config, 'STREAMER_NAME', '') or '配信者'
@@ -460,6 +476,12 @@ class CommentGenerator:
             logger.warning(f"[入力NGワード] 音声認識結果にポリシー違反の可能性があるためスキップ")
             return None
 
+        # ヒアリング質問への回答をプロフィールに記録
+        if self._profile_manager and (time.time() - self._last_hearing_time) < 120:
+            # 直前のヒアリング質問から2分以内の発言は回答として記録
+            self._profile_manager.add_topic(f"好み: {speech_text[:20]}")
+            logger.info(f"[ヒアリング記録] {speech_text[:30]}")
+
         # 検索キーワードが含まれていたら検索モードで回答
         if self._is_search_trigger(speech_text):
             logger.info(f"[検索モード] '{speech_text}' に検索キーワードを検出")
@@ -541,6 +563,22 @@ class CommentGenerator:
         screen_context = ""
         if screen_description and "ゲーム画面が表示されていません" not in screen_description and "配信が始まったばかり" not in screen_description:
             screen_context = f"\n【現在のゲーム画面】\n{screen_description}\n"
+
+        # ヒアリング質問（10分に1回・沈黙180秒以上のとき）
+        now = time.time()
+        if silence_seconds >= 180 and (now - self._last_hearing_time) >= self._hearing_cooldown:
+            import random
+            question = random.choice(self.HEARING_QUESTIONS)
+            prompt = f"""{history_text}配信者が{int(silence_seconds)}秒間無言です。
+視聴者として配信者のことをもっと知りたいので、以下の質問を自然な友達口調で聞いてください。
+質問：「{question}」
+必ず1文で、文章を最後まで書き切ること。"""
+            comment = self._call_gemini(prompt)
+            if comment and not self._is_duplicate(comment):
+                self._record_comment(comment)
+                self._last_hearing_time = now
+                logger.info(f"[ヒアリング質問] {comment}")
+                return comment
 
         # 直前の発言があれば深掘り
         last_streamer_speech = None
