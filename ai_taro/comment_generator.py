@@ -262,9 +262,9 @@ class CommentGenerator:
                 system_instruction=self.get_system_prompt()
             )
 
-            # Google Search toolを正しい形式で指定
+            # Google Search toolをv0.8.x対応の形式で指定
             search_tool = protos.Tool(
-                google_search=protos.GoogleSearch()
+                google_search_retrieval=protos.GoogleSearchRetrieval()
             )
 
             self.is_generating = True
