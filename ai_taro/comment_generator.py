@@ -257,8 +257,9 @@ class CommentGenerator:
             from google.generativeai import protos
             genai.configure(api_key=self.config.GEMINI_API_KEY)
 
+            # 検索Groundingはflash-liteが非対応のためflashを使用
             model = genai.GenerativeModel(
-                model_name=getattr(self.config, 'GEMINI_MODEL', 'gemini-2.5-flash-lite'),
+                model_name='gemini-2.5-flash',
                 system_instruction=self.get_system_prompt()
             )
 
