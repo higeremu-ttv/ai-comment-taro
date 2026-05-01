@@ -254,7 +254,6 @@ class CommentGenerator:
         """Google Search Groundingを有効にしてGemini APIを呼び出す"""
         try:
             import google.generativeai as genai
-            from google.generativeai import protos
             genai.configure(api_key=self.config.GEMINI_API_KEY)
 
             # 検索Groundingはflash-liteが非対応のためflashを使用
@@ -263,16 +262,14 @@ class CommentGenerator:
                 system_instruction=self.get_system_prompt()
             )
 
-            # Google Search toolをv0.8.x対応の形式で指定
-            search_tool = protos.Tool(
-                google_search_retrieval=protos.GoogleSearchRetrieval()
-            )
+            # APIエラーメッセージ指示通り google_search を使用
+            tools = [{"google_search": {}}]
 
             self.is_generating = True
-            search_prompt = prompt + "\n\n必要なら検索して調べてください。回答は日本語で20文字以内の短い友達口調でお願いします。"
+            search_prompt = prompt + "\n\n必要なら検索して調べてください。回答は日本語で15〜20文字程度の短い友達口調でお願いします。情報が不十分な場合は知ったかぶりせず友達口調で聞き返してください。"
             response = model.generate_content(
                 search_prompt,
-                tools=[search_tool]
+                tools=tools
             )
 
             if not response or not response.text:
