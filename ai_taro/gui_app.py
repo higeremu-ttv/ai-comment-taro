@@ -1,5 +1,5 @@
 """
-AIコメント太郎 - GUI管理アプリ v3.43
+AIコメント太郎 - GUI管理アプリ v3.49
 tkinterを使ったデスクトップGUIアプリです。
 このファイルを実行するとGUIが起動します: python gui_app.py
 """
@@ -26,7 +26,7 @@ class QueueHandler(logging.Handler):
 class BotGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("AIコメント太郎 v3.43")
+        self.root.title("AIコメント太郎 v3.49")
         self.root.geometry("820x660")
         self.root.resizable(True, True)
         self.root.configure(bg="#1a1a2e")
@@ -121,7 +121,7 @@ class BotGUI:
         header = tk.Frame(self.root, bg=self.colors["bg"], pady=10)
         header.pack(fill="x", padx=16)
 
-        tk.Label(header, text="🎮  AIコメント太郎  v3.43",
+        tk.Label(header, text="🎮  AIコメント太郎  v3.49",
                  bg=self.colors["bg"], fg=self.colors["text"],
                  font=("Yu Gothic UI", 16, "bold")).pack(side="left")
 
@@ -696,7 +696,7 @@ class BotGUI:
 
             logger = logging.getLogger("gui_bot")
             logger.info("=" * 50)
-            logger.info("AIコメント太郎 v3.43 を起動します")
+            logger.info("AIコメント太郎 v3.49 を起動します")
             logger.info(f"チャンネル: #{config.CHANNEL_NAME}")
             logger.info(f"音声認識: Google Web Speech API（日本語）")
             logger.info(f"コメント生成: Gemini API ({config.GEMINI_MODEL})")
@@ -801,8 +801,13 @@ class BotGUI:
                     return
 
                 if not can_send():
-                    logger.debug("クールダウン中のためスキップ")
-                    return
+                    if comment_gen._is_search_trigger(combined_text):
+                        logger.info("[検索優先] クールダウン中だが検索キーワードを検出、優先処理します")
+                        comment_gen.reset_conversation_state()
+                        last_comment_time[0] = 0.0
+                    else:
+                        logger.debug("クールダウン中のためスキップ")
+                        return
 
                 logger.info(f"まとまった発言を処理: {combined_text}")
 

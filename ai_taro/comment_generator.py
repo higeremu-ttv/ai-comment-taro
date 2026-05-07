@@ -196,6 +196,12 @@ class CommentGenerator:
         self._stream_info = {}
         logger.info("会話履歴とモデルをリセットしました")
 
+    def reset_conversation_state(self):
+        self._conversation_state = ConversationState.IDLE
+        self._current_topic_turns = 0
+        self._topic_end_time = 0.0
+        logger.info("[検索優先] 会話ステートをリセットしました")
+
     def set_stream_info(self, info: dict):
         """Twitchから取得した配信情報をセットする"""
         self._stream_info = info
@@ -251,25 +257,32 @@ class CommentGenerator:
         return any(kw in text for kw in search_keywords)
 
     def _call_gemini_with_search(self, prompt: str) -> Optional[str]:
-        """Google Search Groundingを有効にしてGemini APIを呼び出す"""
+        """Google Search Groundingを有効にしてGemini APIを呼び出す（google-genai SDK）"""
         try:
-            import google.generativeai as genai
-            genai.configure(api_key=self.config.GEMINI_API_KEY)
+            from google import genai
+            from google.genai import types
 
-            # 検索Groundingはflash-liteが非対応のためflashを使用
-            model = genai.GenerativeModel(
-                model_name='gemini-2.5-flash',
-                system_instruction=self.get_system_prompt()
-            )
-
-            # APIエラーメッセージ指示通り google_search を使用
-            tools = [{"google_search": {}}]
+            client = genai.Client(api_key=self.config.GEMINI_API_KEY)
+            search_tool = types.Tool(google_search=types.GoogleSearch())
 
             self.is_generating = True
-            search_prompt = prompt + "\n\n必要なら検索して調べてください。回答は日本語で15〜20文字程度の短い友達口調でお願いします。情報が不十分な場合は知ったかぶりせず友達口調で聞き返してください。"
-            response = model.generate_content(
-                search_prompt,
-                tools=tools
+
+            # 必ず検索させる強制プロンプト
+            search_prompt = (
+                self.get_system_prompt() + "\n\n"
+                "【重要指示】以下の発言に検索キーワードが含まれています。"
+                "必ずgoogle_searchツールを使って実際にWeb検索を行い、"
+                "検索結果を元に日本語で15〜20文字程度の短い友達口調で答えてください。"
+                "検索せずに答えることは禁止です。\n\n"
+                f"発言内容: {prompt}"
+            )
+
+            response = client.models.generate_content(
+                model='gemini-2.5-flash',
+                contents=search_prompt,
+                config=types.GenerateContentConfig(
+                    tools=[search_tool]
+                )
             )
 
             if not response or not response.text:
