@@ -245,70 +245,7 @@ class CommentGenerator:
             logger.error(f"Gemini APIの初期化エラー: {e}")
             return None
 
-    def _is_search_trigger(self, text: str) -> bool:
-        """検索が必要なキーワードが含まれているか判定する"""
-        search_keywords = [
-            '調べて', '検索して', '教えて', 'おしえて',
-            'なんだっけ', 'なんだろう', 'どうやって', 'どうやる',
-            'って何', 'とは何', 'とは？', 'って何？',
-            'いくら', 'どこで', 'いつから', 'いつまで',
-            '最新', '今の', '今日の', '天気', 'ニュース',
-        ]
-        return any(kw in text for kw in search_keywords)
-
-    def _call_gemini_with_search(self, prompt: str) -> Optional[str]:
-        """Google Search Groundingを有効にしてGemini APIを呼び出す（google-genai SDK）"""
-        try:
-            from google import genai
-            from google.genai import types
-
-            client = genai.Client(api_key=self.config.GEMINI_API_KEY)
-            search_tool = types.Tool(google_search=types.GoogleSearch())
-
-            self.is_generating = True
-
-            # 必ず検索させる強制プロンプト
-            search_prompt = (
-                self.get_system_prompt() + "\n\n"
-                "【重要指示】以下の発言に検索キーワードが含まれています。"
-                "必ずgoogle_searchツールを使って実際にWeb検索を行い、"
-                "検索結果を元に日本語で15〜20文字程度の短い友達口調で答えてください。"
-                "検索せずに答えることは禁止です。\n\n"
-                f"発言内容: {prompt}"
-            )
-
-            response = client.models.generate_content(
-                model='gemini-2.5-flash',
-                contents=search_prompt,
-                config=types.GenerateContentConfig(
-                    tools=[search_tool]
-                )
-            )
-
-            if not response or not response.text:
-                return None
-
-            comment = response.text.strip().replace("\n", " ").strip()
-            if len(comment) < 5:
-                return None
-
-            logger.info(f"[検索モード] 回答生成成功: {comment[:50]}")
-            return comment
-
-        except Exception as e:
-            logger.warning(f"[検索grounding] 失敗、通常モードにフォールバック: {e}")
-            return None
-        finally:
-            self.is_generating = False
-
-    def _call_gemini(self, prompt: str, use_search: bool = False) -> Optional[str]:
-        """Gemini APIを呼び出す。use_search=TrueのときはGrounding有効。"""
-        if use_search:
-            result = self._call_gemini_with_search(prompt)
-            if result:
-                return result
-            # 失敗した場合は通常モードにフォールバック
-            logger.info("[検索grounding] 通常モードにフォールバック")
+    def _call_gemini(self, prompt: str) -> Optional[str]:
 
         for attempt in range(2):
             result = self._call_gemini_once(prompt)
@@ -437,22 +374,8 @@ class CommentGenerator:
 
         # AI名前呼びかけ・視聴者コマンドはクールダウンをバイパス
         if trigger == CommentTrigger.DIRECT_CONVERSATION:
-            # 検索キーワードが含まれていたら検索モード
-            if self._needs_search(speech_text):
-                result = self._call_gemini_with_search(
-                    f"「{speech_text}」という質問に対して、検索結果を元に20文字以内で友達口調で簡潔に答えてください。情報が足りない場合は知ったかぶりせず友達口調で聞き返してください。"
-                )
-                if result:
-                    return result
             return self._generate_direct_conversation(speech_text)
         if trigger == CommentTrigger.VIEWER_COMMAND:
-            # 検索キーワードが含まれていたら検索モード
-            if self._needs_search(speech_text):
-                result = self._call_gemini_with_search(
-                    f"「{speech_text}」という質問に対して、検索結果を元に20文字以内で友達口調で簡潔に答えてください。情報が足りない場合は知ったかぶりせず友達口調で聞き返してください。"
-                )
-                if result:
-                    return result
             return self._generate_viewer_command_response(speech_text)
 
         # 音声テキストにNGワードが含まれていたらスキップ
@@ -492,17 +415,6 @@ class CommentGenerator:
             # 直前のヒアリング質問から2分以内の発言は回答として記録
             self._profile_manager.add_topic(f"好み: {speech_text[:20]}")
             logger.info(f"[ヒアリング記録] {speech_text[:30]}")
-
-        # 検索キーワードが含まれていたら検索モードで回答
-        if self._is_search_trigger(speech_text):
-            logger.info(f"[検索モード] '{speech_text}' に検索キーワードを検出")
-            result = self._call_gemini(
-                f"配信者が「{speech_text}」と言いました。検索結果を元に20文字以内で友達口調で簡潔に答えてください。情報が足りない場合は知ったかぶりせず友達口調で聞き返してください。",
-                use_search=True
-            )
-            if result:
-                self._record_comment(result)
-                return result
 
         self._conversation_history.append({"role": "streamer", "content": speech_text})
         if len(self._conversation_history) > 20:
@@ -673,11 +585,7 @@ class CommentGenerator:
             history_text = self._build_history_text()
             prompt = f"""{history_text}視聴者からの質問：「{question}」
 自然に答えてください。1〜3文、日本語のみ。"""
-            # 質問に検索キーワードが含まれていたら検索モードで回答
-            use_search = self._is_search_trigger(question)
-            if use_search:
-                logger.info(f"[検索モード] 視聴者コマンドで検索キーワードを検出: {question}")
-            comment = self._call_gemini(prompt, use_search=use_search)
+            comment = self._call_gemini(prompt)
 
         if comment:
             self._record_comment(comment)

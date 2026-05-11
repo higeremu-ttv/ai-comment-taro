@@ -1,5 +1,5 @@
 """
-AIコメント太郎 - GUI管理アプリ v3.49
+AIコメント太郎 - GUI管理アプリ v3.50
 tkinterを使ったデスクトップGUIアプリです。
 このファイルを実行するとGUIが起動します: python gui_app.py
 """
@@ -26,7 +26,7 @@ class QueueHandler(logging.Handler):
 class BotGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("AIコメント太郎 v3.49")
+        self.root.title("AIコメント太郎 v3.50")
         self.root.geometry("820x660")
         self.root.resizable(True, True)
         self.root.configure(bg="#1a1a2e")
@@ -121,7 +121,7 @@ class BotGUI:
         header = tk.Frame(self.root, bg=self.colors["bg"], pady=10)
         header.pack(fill="x", padx=16)
 
-        tk.Label(header, text="🎮  AIコメント太郎  v3.49",
+        tk.Label(header, text="🎮  AIコメント太郎  v3.50",
                  bg=self.colors["bg"], fg=self.colors["text"],
                  font=("Yu Gothic UI", 16, "bold")).pack(side="left")
 
@@ -696,7 +696,7 @@ class BotGUI:
 
             logger = logging.getLogger("gui_bot")
             logger.info("=" * 50)
-            logger.info("AIコメント太郎 v3.49 を起動します")
+            logger.info("AIコメント太郎 v3.50 を起動します")
             logger.info(f"チャンネル: #{config.CHANNEL_NAME}")
             logger.info(f"音声認識: Google Web Speech API（日本語）")
             logger.info(f"コメント生成: Gemini API ({config.GEMINI_MODEL})")
@@ -898,14 +898,45 @@ class BotGUI:
             def on_viewer_comment(content, username, is_bot=False):
                 if not getattr(config, 'VIEWER_COMMENT_REACTION_ENABLED', True):
                     return
+
+                # ボット通知はクールダウンありで反応（頻度を抑える）
                 import time as _time
                 now = _time.time()
-                cooldown = getattr(config, 'VIEWER_COMMENT_REACTION_COOLDOWN', 120)
-                if now - last_viewer_reaction_time[0] < cooldown:
-                    return
-                trigger_label = "ボット通知" if is_bot else "視聴者コメント"
+                if is_bot:
+                    bot_cooldown = 300  # ボット通知は5分に1回
+                    if now - last_viewer_reaction_time[0] < bot_cooldown:
+                        return
+                    trigger_label = "ボット通知"
+                    prompt = f"Twitchのボット通知：「{content}」。これを読んで視聴者として一言コメントしてください。日本語1文のみ。"
+                else:
+                    # 視聴者コメントを学習
+                    profile_mgr = getattr(comment_gen, '_profile_manager', None)
+                    if profile_mgr:
+                        profile_mgr.add_viewer_comment(username, content)
+
+                    ai_name = getattr(config, 'AI_NAME', '太郎')
+                    is_name_mention = ai_name in content or 'コメント太郎' in content
+
+                    if not is_name_mention:
+                        # 通常視聴者コメントは30秒クールダウン
+                        cooldown = getattr(config, 'VIEWER_COMMENT_REACTION_COOLDOWN', 30)
+                        if now - last_viewer_reaction_time[0] < cooldown:
+                            return
+
+                    trigger_label = "視聴者コメント"
+                    # 常連かどうかで反応を変える
+                    profile_mgr = getattr(comment_gen, '_profile_manager', None)
+                    viewer_count = 0
+                    if profile_mgr:
+                        viewers = profile_mgr._profile.get('known_viewers', {})
+                        viewer_count = viewers.get(username, {}).get('count', 0)
+
+                    if viewer_count >= 5:
+                        prompt = f"常連の「{username}」が「{content}」とコメントしました。親しみを込めて視聴者として自然に1文で反応してください。日本語のみ。"
+                    else:
+                        prompt = f"Twitchチャットに「{username}」が「{content}」と書きました。視聴者として自然に1文で反応してください。日本語のみ。"
+
                 logger.info(f"[{trigger_label}反応] {username}: {content}")
-                prompt = f"Twitchチャットに「{username}」が「{content}」と書きました。これに対して視聴者として自然に1文で反応してください。日本語のみ・文章を最後まで書き切ること。"
                 comment = comment_gen._call_gemini(prompt)
                 if comment:
                     last_viewer_reaction_time[0] = now

@@ -108,6 +108,11 @@ class ProfileManager:
         if friends:
             lines.append(f"- よく一緒にプレイする仲間: {', '.join(friends[-10:])}")
 
+        # 常連視聴者
+        viewer_ctx = self.get_viewer_context()
+        if viewer_ctx:
+            lines.append(viewer_ctx)
+
         topics = self._profile.get('recent_topics', [])
         if topics:
             lines.append(f"- 最近の話題: {', '.join(topics[-8:])}")
@@ -170,7 +175,33 @@ JSONのみ出力してください。例: {{"friends": ["あおちゃん", "beet
         self.save()
         logger.info("会話履歴からプロフィールを更新しました")
 
-    def _update_from_conversation_regex(self, conversation_history: list):
+    def add_viewer_comment(self, username: str, content: str):
+        """視聴者のコメントを記録する"""
+        if not username or not content or len(content) < 2:
+            return
+        viewers = self._profile.setdefault('known_viewers', {})
+        if username not in viewers:
+            viewers[username] = {'count': 0, 'samples': []}
+        viewers[username]['count'] += 1
+        # サンプルコメントは最大3件保持
+        samples = viewers[username]['samples']
+        if content not in samples:
+            samples.append(content[:30])
+            if len(samples) > 3:
+                samples.pop(0)
+        # 常連（10回以上）は known_friends にも追加
+        if viewers[username]['count'] >= 10:
+            self.add_friend(username)
+
+    def get_viewer_context(self) -> str:
+        """視聴者情報をプロンプト用テキストで返す"""
+        viewers = self._profile.get('known_viewers', {})
+        if not viewers:
+            return ""
+        # コメント数上位5人を常連として紹介
+        top = sorted(viewers.items(), key=lambda x: x[1]['count'], reverse=True)[:5]
+        names = [f"{u}({d['count']}回)" for u, d in top]
+        return f"- よく来る視聴者: {', '.join(names)}"
         """正規表現で仲間の名前を抽出（フォールバック用）"""
         import re
         for msg in conversation_history:
