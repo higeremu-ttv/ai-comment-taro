@@ -1,5 +1,5 @@
 """
-AIコメント太郎 - GUI管理アプリ v3.50
+AIコメント太郎 - GUI管理アプリ v3.52
 tkinterを使ったデスクトップGUIアプリです。
 このファイルを実行するとGUIが起動します: python gui_app.py
 """
@@ -26,7 +26,7 @@ class QueueHandler(logging.Handler):
 class BotGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("AIコメント太郎 v3.50")
+        self.root.title("AIコメント太郎 v3.52")
         self.root.geometry("820x660")
         self.root.resizable(True, True)
         self.root.configure(bg="#1a1a2e")
@@ -121,7 +121,7 @@ class BotGUI:
         header = tk.Frame(self.root, bg=self.colors["bg"], pady=10)
         header.pack(fill="x", padx=16)
 
-        tk.Label(header, text="🎮  AIコメント太郎  v3.50",
+        tk.Label(header, text="🎮  AIコメント太郎  v3.52",
                  bg=self.colors["bg"], fg=self.colors["text"],
                  font=("Yu Gothic UI", 16, "bold")).pack(side="left")
 
@@ -696,7 +696,7 @@ class BotGUI:
 
             logger = logging.getLogger("gui_bot")
             logger.info("=" * 50)
-            logger.info("AIコメント太郎 v3.50 を起動します")
+            logger.info("AIコメント太郎 v3.52 を起動します")
             logger.info(f"チャンネル: #{config.CHANNEL_NAME}")
             logger.info(f"音声認識: Google Web Speech API（日本語）")
             logger.info(f"コメント生成: Gemini API ({config.GEMINI_MODEL})")
@@ -974,8 +974,64 @@ class BotGUI:
 
             logger.info("bot が稼働中です。停止ボタンで停止します。")
 
+            # 俳句タイマー設定（25〜35分のランダム間隔）
+            import random
+            next_haiku_interval = random.randint(25 * 60, 35 * 60)
+            last_haiku_time = [time.time()]
+            logger.info(f"[俳句] 次の一句まで {next_haiku_interval // 60} 分")
+
             while self.bot_running:
                 time.sleep(1)
+
+                # 俳句タイマーチェック
+                now = time.time()
+                if now - last_haiku_time[0] >= next_haiku_interval:
+                    try:
+                        # 直近の会話履歴から俳句を生成
+                        history = comment_gen._conversation_history[-20:] if comment_gen._conversation_history else []
+                        stream_info = getattr(comment_gen, '_stream_info', {})
+                        game_name = stream_info.get('game_name', '')
+                        game_text = f"配信中のゲーム：{game_name}\n" if game_name else ""
+
+                        if history:
+                            history_text = "\n".join([
+                                f"{'配信者' if m.get('role') == 'streamer' else '太郎'}: {m.get('content', '')}"
+                                for m in history
+                            ])
+                            prompt = (
+                                f"あなたはTwitch配信の常連視聴者「コメント太郎」です。\n"
+                                f"{game_text}"
+                                f"今日の配信でこんな会話がありました：\n{history_text}\n\n"
+                                f"この内容を踏まえて俳句を一句詠んでください。\n"
+                                f"5・7・5を目安にしますが、字余り・字足らずも味があっていいです。\n"
+                                f"俳句の本文のみ出力してください（説明不要）。"
+                            )
+                        else:
+                            prompt = (
+                                f"あなたはTwitch配信の常連視聴者「コメント太郎」です。\n"
+                                f"{game_text}"
+                                f"配信を見ている気分で俳句を一句詠んでください。\n"
+                                f"5・7・5を目安にしますが、字余り・字足らずも味があっていいです。\n"
+                                f"俳句の本文のみ出力してください（説明不要）。"
+                            )
+
+                        haiku = comment_gen._call_gemini(prompt)
+                        if haiku and self.bot_running:
+                            logger.info(f"[俳句] 詠みます: {haiku}")
+                            # 「ここで一句。」を先に送信
+                            twitch.send_comment("ここで一句。")
+                            time.sleep(3)
+                            # 俳句本文を送信
+                            if self.bot_running:
+                                twitch.send_comment(haiku)
+                                self.log_queue.put(f"COMMENT:ここで一句。→ {haiku}")
+                    except Exception as e:
+                        logger.warning(f"[俳句] 生成失敗: {e}")
+
+                    # 次の俳句タイマーをリセット
+                    last_haiku_time[0] = time.time()
+                    next_haiku_interval = random.randint(25 * 60, 35 * 60)
+                    logger.info(f"[俳句] 次の一句まで {next_haiku_interval // 60} 分")
 
         except Exception as e:
             logging.getLogger("gui_bot").error(f"Bot実行エラー: {e}")
