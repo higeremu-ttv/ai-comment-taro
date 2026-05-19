@@ -1,5 +1,5 @@
 """
-AIコメント太郎 - GUI管理アプリ v3.53
+AIコメント太郎 - GUI管理アプリ v3.54
 tkinterを使ったデスクトップGUIアプリです。
 このファイルを実行するとGUIが起動します: python gui_app.py
 """
@@ -26,7 +26,7 @@ class QueueHandler(logging.Handler):
 class BotGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("AIコメント太郎 v3.53")
+        self.root.title("AIコメント太郎 v3.54")
         self.root.geometry("820x660")
         self.root.resizable(True, True)
         self.root.configure(bg="#1a1a2e")
@@ -121,7 +121,7 @@ class BotGUI:
         header = tk.Frame(self.root, bg=self.colors["bg"], pady=10)
         header.pack(fill="x", padx=16)
 
-        tk.Label(header, text="🎮  AIコメント太郎  v3.53",
+        tk.Label(header, text="🎮  AIコメント太郎  v3.54",
                  bg=self.colors["bg"], fg=self.colors["text"],
                  font=("Yu Gothic UI", 16, "bold")).pack(side="left")
 
@@ -696,7 +696,7 @@ class BotGUI:
 
             logger = logging.getLogger("gui_bot")
             logger.info("=" * 50)
-            logger.info("AIコメント太郎 v3.53 を起動します")
+            logger.info("AIコメント太郎 v3.54 を起動します")
             logger.info(f"チャンネル: #{config.CHANNEL_NAME}")
             logger.info(f"音声認識: Google Web Speech API（日本語）")
             logger.info(f"コメント生成: Gemini API ({config.GEMINI_MODEL})")
@@ -914,6 +914,13 @@ class BotGUI:
                     if profile_mgr:
                         profile_mgr.add_viewer_comment(username, content)
 
+                    # 視聴者コメントを会話履歴にも追加（俳句の材料にする）
+                    if not is_bot and len(content) >= 4:
+                        comment_gen._conversation_history.append({
+                            'role': 'viewer',
+                            'content': f"{username}：{content}"
+                        })
+
                     ai_name = getattr(config, 'AI_NAME', '太郎')
                     is_name_mention = ai_name in content or 'コメント太郎' in content
 
@@ -995,7 +1002,7 @@ class BotGUI:
 
                         if history:
                             history_text = "\n".join([
-                                f"{'配信者' if m.get('role') == 'streamer' else '太郎'}: {m.get('content', '')}"
+                                f"{'配信者' if m.get('role') == 'streamer' else ('視聴者' if m.get('role') == 'viewer' else '太郎')}: {m.get('content', '')}"
                                 for m in history
                             ])
                             prompt = (

@@ -1,5 +1,5 @@
 """
-AIコメント太郎 v3.53 - メインコントローラー
+AIコメント太郎 v3.54 - メインコントローラー
 配信中に音声を認識し、自然な日本語コメントを自動投稿するbotです。
 音声認識: Google Web Speech API（高精度・無料）
 コメント生成: Gemini API（gemini-1.5-flash・無料枠あり）
@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)
 
 class TwitchAIBot:
     """
-    AIコメント太郎 v3.53のメインコントローラー。
+    AIコメント太郎 v3.54のメインコントローラー。
     各モジュールを統合し、タイミング制御を行います。
     """
 
@@ -210,7 +210,7 @@ class TwitchAIBot:
     def start(self):
         """botを起動する"""
         logger.info("=" * 60)
-        logger.info("AIコメント太郎 v3.53 を起動します")
+        logger.info("AIコメント太郎 v3.54 を起動します")
         logger.info(f"チャンネル: #{cfg.CHANNEL_NAME}")
         logger.info(f"音声認識: Google Web Speech API（日本語）")
         logger.info(f"コメント生成: Gemini API ({cfg.GEMINI_MODEL})")
