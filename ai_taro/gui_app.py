@@ -1,5 +1,5 @@
 """
-AIコメント太郎 - GUI管理アプリ v3.52
+AIコメント太郎 - GUI管理アプリ v3.53
 tkinterを使ったデスクトップGUIアプリです。
 このファイルを実行するとGUIが起動します: python gui_app.py
 """
@@ -26,7 +26,7 @@ class QueueHandler(logging.Handler):
 class BotGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("AIコメント太郎 v3.52")
+        self.root.title("AIコメント太郎 v3.53")
         self.root.geometry("820x660")
         self.root.resizable(True, True)
         self.root.configure(bg="#1a1a2e")
@@ -121,7 +121,7 @@ class BotGUI:
         header = tk.Frame(self.root, bg=self.colors["bg"], pady=10)
         header.pack(fill="x", padx=16)
 
-        tk.Label(header, text="🎮  AIコメント太郎  v3.52",
+        tk.Label(header, text="🎮  AIコメント太郎  v3.53",
                  bg=self.colors["bg"], fg=self.colors["text"],
                  font=("Yu Gothic UI", 16, "bold")).pack(side="left")
 
@@ -696,7 +696,7 @@ class BotGUI:
 
             logger = logging.getLogger("gui_bot")
             logger.info("=" * 50)
-            logger.info("AIコメント太郎 v3.52 を起動します")
+            logger.info("AIコメント太郎 v3.53 を起動します")
             logger.info(f"チャンネル: #{config.CHANNEL_NAME}")
             logger.info(f"音声認識: Google Web Speech API（日本語）")
             logger.info(f"コメント生成: Gemini API ({config.GEMINI_MODEL})")
@@ -1002,29 +1002,31 @@ class BotGUI:
                                 f"あなたはTwitch配信の常連視聴者「コメント太郎」です。\n"
                                 f"{game_text}"
                                 f"今日の配信でこんな会話がありました：\n{history_text}\n\n"
-                                f"この内容を踏まえて俳句を一句詠んでください。\n"
-                                f"5・7・5を目安にしますが、字余り・字足らずも味があっていいです。\n"
-                                f"俳句の本文のみ出力してください（説明不要）。"
+                                f"この配信の雰囲気・出来事・感情を詠んだ俳句を一句作ってください。\n"
+                                f"・5・7・5を目安に（字余り・字足らずOK）\n"
+                                f"・ありきたりな表現を避け、この配信ならではの言葉を使うこと\n"
+                                f"・季語がなくてもOK\n"
+                                f"・俳句の本文のみ出力（説明・コメント不要）"
                             )
                         else:
                             prompt = (
                                 f"あなたはTwitch配信の常連視聴者「コメント太郎」です。\n"
                                 f"{game_text}"
-                                f"配信を見ている気分で俳句を一句詠んでください。\n"
-                                f"5・7・5を目安にしますが、字余り・字足らずも味があっていいです。\n"
-                                f"俳句の本文のみ出力してください（説明不要）。"
+                                f"配信を見ている今この瞬間の気持ちを俳句にしてください。\n"
+                                f"・5・7・5を目安に（字余り・字足らずOK）\n"
+                                f"・ありきたりな表現を避け、独自の言葉を使うこと\n"
+                                f"・季語がなくてもOK\n"
+                                f"・俳句の本文のみ出力（説明・コメント不要）"
                             )
 
                         haiku = comment_gen._call_gemini(prompt)
                         if haiku and self.bot_running:
-                            logger.info(f"[俳句] 詠みます: {haiku}")
-                            # 「ここで一句。」を先に送信
-                            twitch.send_comment("ここで一句。")
-                            time.sleep(3)
-                            # 俳句本文を送信
-                            if self.bot_running:
-                                twitch.send_comment(haiku)
-                                self.log_queue.put(f"COMMENT:ここで一句。→ {haiku}")
+                            # 先に生成してから一括送信
+                            haiku = haiku.strip().replace('\n', '　')
+                            message = f"ここで一句。「{haiku}」"
+                            logger.info(f"[俳句] {message}")
+                            twitch.send_comment(message)
+                            self.log_queue.put(f"COMMENT:{message}")
                     except Exception as e:
                         logger.warning(f"[俳句] 生成失敗: {e}")
 
