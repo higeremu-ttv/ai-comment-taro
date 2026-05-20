@@ -22,6 +22,7 @@ class TwitchModule:
     def __init__(self, config):
         self.config = config
         self._message_queue = queue.Queue()
+        self._priority_queue = queue.Queue()  # 謎かけ等の優先送信キュー
         self._last_send_time = 0.0
         self._is_connected = False
         self._loop = None
@@ -164,6 +165,19 @@ class TwitchModule:
         self._message_queue.put(message)
         logger.debug(f"コメントをキューに追加: {message}")
 
+    def send_comment_priority(self, message: str):
+        """
+        コメントを優先送信キューに追加する（謎かけなど時間的タイミングが重要なもの用）。
+
+        Args:
+            message: 送信するコメント文字列
+        """
+        if not message or not message.strip():
+            return
+        message = message.strip()[:500]
+        self._priority_queue.put(message)
+        logger.debug(f"優先コメントをキューに追加: {message}")
+
     def _create_bot(self):
         """twitchioのBotインスタンスを作成する"""
         try:
@@ -172,6 +186,7 @@ class TwitchModule:
 
             config = self.config
             message_queue = self._message_queue
+            priority_queue = self._priority_queue
 
             class TwitchBot(commands.Bot):
                 def __init__(self):
@@ -254,12 +269,20 @@ class TwitchModule:
                     """キューからメッセージを取り出して送信するループ"""
                     while True:
                         try:
-                            # キューからメッセージを取得（ノンブロッキング）
+                            # 優先キューを先にチェック（謎かけ等）
+                            message = None
                             try:
-                                message = message_queue.get_nowait()
+                                message = priority_queue.get_nowait()
                             except queue.Empty:
-                                await asyncio.sleep(1)
-                                continue
+                                pass
+
+                            # 優先キューが空なら通常キューをチェック
+                            if message is None:
+                                try:
+                                    message = message_queue.get_nowait()
+                                except queue.Empty:
+                                    await asyncio.sleep(1)
+                                    continue
 
                             # チャンネルが取得できていない場合は待機
                             if self._channel is None:

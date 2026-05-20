@@ -1,5 +1,5 @@
 """
-AIコメント太郎 - GUI管理アプリ v3.55
+AIコメント太郎 - GUI管理アプリ v3.58
 tkinterを使ったデスクトップGUIアプリです。
 このファイルを実行するとGUIが起動します: python gui_app.py
 """
@@ -26,7 +26,7 @@ class QueueHandler(logging.Handler):
 class BotGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("AIコメント太郎 v3.55")
+        self.root.title("AIコメント太郎 v3.58")
         self.root.geometry("820x660")
         self.root.resizable(True, True)
         self.root.configure(bg="#1a1a2e")
@@ -121,7 +121,7 @@ class BotGUI:
         header = tk.Frame(self.root, bg=self.colors["bg"], pady=10)
         header.pack(fill="x", padx=16)
 
-        tk.Label(header, text="🎮  AIコメント太郎  v3.55",
+        tk.Label(header, text="🎮  AIコメント太郎  v3.58",
                  bg=self.colors["bg"], fg=self.colors["text"],
                  font=("Yu Gothic UI", 16, "bold")).pack(side="left")
 
@@ -696,7 +696,7 @@ class BotGUI:
 
             logger = logging.getLogger("gui_bot")
             logger.info("=" * 50)
-            logger.info("AIコメント太郎 v3.55 を起動します")
+            logger.info("AIコメント太郎 v3.58 を起動します")
             logger.info(f"チャンネル: #{config.CHANNEL_NAME}")
             logger.info(f"音声認識: Google Web Speech API（日本語）")
             logger.info(f"コメント生成: Gemini API ({config.GEMINI_MODEL})")
@@ -1061,7 +1061,9 @@ class BotGUI:
                         f"この配信の内容をもとに謎かけを一つ作ってください。\n"
                         f"形式：「○○とかけて△△と解く、その心は／□□」\n"
                         f"・「／」で前半と後半を必ず区切ること\n"
-                        f"・配信ならではのワードを使うこと\n"
+                        f"・答え（その心は）は意外性があり、思わず笑えるひねりを効かせること\n"
+                        f"・「どちらも〜」という当たり前の答えは絶対禁止\n"
+                        f"・配信ならではのワードや状況を活かすこと\n"
                         f"・謎かけ本文のみ出力（説明不要）"
                     )
                 else:
@@ -1071,6 +1073,8 @@ class BotGUI:
                         f"配信の雰囲気をもとに謎かけを一つ作ってください。\n"
                         f"形式：「○○とかけて△△と解く、その心は／□□」\n"
                         f"・「／」で前半と後半を必ず区切ること\n"
+                        f"・答え（その心は）は意外性があり、思わず笑えるひねりを効かせること\n"
+                        f"・「どちらも〜」という当たり前の答えは絶対禁止\n"
                         f"・謎かけ本文のみ出力（説明不要）"
                     )
                 result = _call_gemini_flash(prompt)
@@ -1078,15 +1082,17 @@ class BotGUI:
                     parts = result.strip().split('／', 1)
                     first = parts[0].strip()
                     second = parts[1].strip() if len(parts) > 1 else ""
+                    # 「その心は」が含まれていたら除去（送信側で付ける）
+                    first = first.replace('、その心は', '').replace('その心は', '').strip()
                     if first and second:
                         msg1 = f"謎かけいきます。「{first}、その心は」"
                         logger.info(f"[謎かけ前半] {msg1}")
-                        twitch.send_comment(msg1)
+                        twitch.send_comment_priority(msg1)
                         self.log_queue.put(f"COMMENT:{msg1}")
-                        time.sleep(2)
+                        time.sleep(1)
                         msg2 = f"「{second}」"
                         logger.info(f"[謎かけ後半] {msg2}")
-                        twitch.send_comment(msg2)
+                        twitch.send_comment_priority(msg2)
                         self.log_queue.put(f"COMMENT:{msg2}")
 
             # イベントリスト（今後追加しやすい構造）
