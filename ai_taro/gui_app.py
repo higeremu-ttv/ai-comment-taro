@@ -1,5 +1,5 @@
 """
-AIコメント太郎 - GUI管理アプリ v3.54
+AIコメント太郎 - GUI管理アプリ v3.55
 tkinterを使ったデスクトップGUIアプリです。
 このファイルを実行するとGUIが起動します: python gui_app.py
 """
@@ -26,7 +26,7 @@ class QueueHandler(logging.Handler):
 class BotGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("AIコメント太郎 v3.54")
+        self.root.title("AIコメント太郎 v3.55")
         self.root.geometry("820x660")
         self.root.resizable(True, True)
         self.root.configure(bg="#1a1a2e")
@@ -121,7 +121,7 @@ class BotGUI:
         header = tk.Frame(self.root, bg=self.colors["bg"], pady=10)
         header.pack(fill="x", padx=16)
 
-        tk.Label(header, text="🎮  AIコメント太郎  v3.54",
+        tk.Label(header, text="🎮  AIコメント太郎  v3.55",
                  bg=self.colors["bg"], fg=self.colors["text"],
                  font=("Yu Gothic UI", 16, "bold")).pack(side="left")
 
@@ -696,7 +696,7 @@ class BotGUI:
 
             logger = logging.getLogger("gui_bot")
             logger.info("=" * 50)
-            logger.info("AIコメント太郎 v3.54 を起動します")
+            logger.info("AIコメント太郎 v3.55 を起動します")
             logger.info(f"チャンネル: #{config.CHANNEL_NAME}")
             logger.info(f"音声認識: Google Web Speech API（日本語）")
             logger.info(f"コメント生成: Gemini API ({config.GEMINI_MODEL})")
@@ -981,66 +981,132 @@ class BotGUI:
 
             logger.info("bot が稼働中です。停止ボタンで停止します。")
 
-            # 俳句タイマー設定（25〜35分のランダム間隔）
+            # 俳句・謎かけタイマー設定（15〜25分のランダム間隔）
             import random
-            next_haiku_interval = random.randint(25 * 60, 35 * 60)
-            last_haiku_time = [time.time()]
-            logger.info(f"[俳句] 次の一句まで {next_haiku_interval // 60} 分")
+            next_event_interval = random.randint(15 * 60, 25 * 60)
+            last_event_time = [time.time()]
+            logger.info(f"[イベント] 次まで {next_event_interval // 60} 分")
+
+            def _call_gemini_flash(prompt: str) -> str:
+                """俳句・謎かけ用にFlashモデルで生成する"""
+                try:
+                    import google.generativeai as genai
+                    genai.configure(api_key=comment_gen.config.GEMINI_API_KEY)
+                    model = genai.GenerativeModel(
+                        model_name='gemini-2.5-flash',
+                        system_instruction=comment_gen.get_system_prompt()
+                    )
+                    response = model.generate_content(prompt)
+                    if response and response.text:
+                        return response.text.strip()
+                except Exception as e:
+                    logger.warning(f"[Flash生成] 失敗、Liteにフォールバック: {e}")
+                return comment_gen._call_gemini(prompt) or ""
+
+            def _build_event_context() -> tuple:
+                """イベント用の会話履歴とゲーム情報を返す"""
+                history = comment_gen._conversation_history[-20:] if comment_gen._conversation_history else []
+                stream_info = getattr(comment_gen, '_stream_info', {})
+                game_name = stream_info.get('game_name', '')
+                game_text = f"配信中のゲーム：{game_name}\n" if game_name else ""
+                if history:
+                    history_text = "\n".join([
+                        f"{'配信者' if m.get('role') == 'streamer' else ('視聴者' if m.get('role') == 'viewer' else '太郎')}: {m.get('content', '')}"
+                        for m in history
+                    ])
+                else:
+                    history_text = ""
+                return history_text, game_text
+
+            def _do_haiku_event():
+                """俳句イベント"""
+                history_text, game_text = _build_event_context()
+                if history_text:
+                    prompt = (
+                        f"あなたはTwitch配信の常連視聴者「コメント太郎」です。\n"
+                        f"{game_text}"
+                        f"今日の配信でこんな会話がありました：\n{history_text}\n\n"
+                        f"この配信の雰囲気・出来事・感情を詠んだ俳句を一句作ってください。\n"
+                        f"・5・7・5を目安に（字余り・字足らずOK）\n"
+                        f"・ありきたりな表現を避け、この配信ならではの言葉を使うこと\n"
+                        f"・季語がなくてもOK\n"
+                        f"・俳句の本文のみ出力（説明・コメント不要）"
+                    )
+                else:
+                    prompt = (
+                        f"あなたはTwitch配信の常連視聴者「コメント太郎」です。\n"
+                        f"{game_text}"
+                        f"配信を見ている今この瞬間の気持ちを俳句にしてください。\n"
+                        f"・5・7・5を目安に（字余り・字足らずOK）\n"
+                        f"・ありきたりな表現を避け、独自の言葉を使うこと\n"
+                        f"・季語がなくてもOK\n"
+                        f"・俳句の本文のみ出力（説明・コメント不要）"
+                    )
+                haiku = _call_gemini_flash(prompt)
+                if haiku and self.bot_running:
+                    haiku = haiku.replace('\n', '　')
+                    message = f"ここで一句。「{haiku}」"
+                    logger.info(f"[俳句] {message}")
+                    twitch.send_comment(message)
+                    self.log_queue.put(f"COMMENT:{message}")
+
+            def _do_nazokake_event():
+                """謎かけイベント"""
+                history_text, game_text = _build_event_context()
+                if history_text:
+                    prompt = (
+                        f"あなたはTwitch配信の常連視聴者「コメント太郎」です。\n"
+                        f"{game_text}"
+                        f"今日の配信でこんな会話がありました：\n{history_text}\n\n"
+                        f"この配信の内容をもとに謎かけを一つ作ってください。\n"
+                        f"形式：「○○とかけて△△と解く、その心は／□□」\n"
+                        f"・「／」で前半と後半を必ず区切ること\n"
+                        f"・配信ならではのワードを使うこと\n"
+                        f"・謎かけ本文のみ出力（説明不要）"
+                    )
+                else:
+                    prompt = (
+                        f"あなたはTwitch配信の常連視聴者「コメント太郎」です。\n"
+                        f"{game_text}"
+                        f"配信の雰囲気をもとに謎かけを一つ作ってください。\n"
+                        f"形式：「○○とかけて△△と解く、その心は／□□」\n"
+                        f"・「／」で前半と後半を必ず区切ること\n"
+                        f"・謎かけ本文のみ出力（説明不要）"
+                    )
+                result = _call_gemini_flash(prompt)
+                if result and '／' in result and self.bot_running:
+                    parts = result.strip().split('／', 1)
+                    first = parts[0].strip()
+                    second = parts[1].strip() if len(parts) > 1 else ""
+                    if first and second:
+                        msg1 = f"謎かけいきます。「{first}、その心は」"
+                        logger.info(f"[謎かけ前半] {msg1}")
+                        twitch.send_comment(msg1)
+                        self.log_queue.put(f"COMMENT:{msg1}")
+                        time.sleep(2)
+                        msg2 = f"「{second}」"
+                        logger.info(f"[謎かけ後半] {msg2}")
+                        twitch.send_comment(msg2)
+                        self.log_queue.put(f"COMMENT:{msg2}")
+
+            # イベントリスト（今後追加しやすい構造）
+            event_list = [_do_haiku_event, _do_nazokake_event]
 
             while self.bot_running:
                 time.sleep(1)
 
-                # 俳句タイマーチェック
+                # イベントタイマーチェック
                 now = time.time()
-                if now - last_haiku_time[0] >= next_haiku_interval:
+                if now - last_event_time[0] >= next_event_interval:
                     try:
-                        # 直近の会話履歴から俳句を生成
-                        history = comment_gen._conversation_history[-20:] if comment_gen._conversation_history else []
-                        stream_info = getattr(comment_gen, '_stream_info', {})
-                        game_name = stream_info.get('game_name', '')
-                        game_text = f"配信中のゲーム：{game_name}\n" if game_name else ""
-
-                        if history:
-                            history_text = "\n".join([
-                                f"{'配信者' if m.get('role') == 'streamer' else ('視聴者' if m.get('role') == 'viewer' else '太郎')}: {m.get('content', '')}"
-                                for m in history
-                            ])
-                            prompt = (
-                                f"あなたはTwitch配信の常連視聴者「コメント太郎」です。\n"
-                                f"{game_text}"
-                                f"今日の配信でこんな会話がありました：\n{history_text}\n\n"
-                                f"この配信の雰囲気・出来事・感情を詠んだ俳句を一句作ってください。\n"
-                                f"・5・7・5を目安に（字余り・字足らずOK）\n"
-                                f"・ありきたりな表現を避け、この配信ならではの言葉を使うこと\n"
-                                f"・季語がなくてもOK\n"
-                                f"・俳句の本文のみ出力（説明・コメント不要）"
-                            )
-                        else:
-                            prompt = (
-                                f"あなたはTwitch配信の常連視聴者「コメント太郎」です。\n"
-                                f"{game_text}"
-                                f"配信を見ている今この瞬間の気持ちを俳句にしてください。\n"
-                                f"・5・7・5を目安に（字余り・字足らずOK）\n"
-                                f"・ありきたりな表現を避け、独自の言葉を使うこと\n"
-                                f"・季語がなくてもOK\n"
-                                f"・俳句の本文のみ出力（説明・コメント不要）"
-                            )
-
-                        haiku = comment_gen._call_gemini(prompt)
-                        if haiku and self.bot_running:
-                            # 先に生成してから一括送信
-                            haiku = haiku.strip().replace('\n', '　')
-                            message = f"ここで一句。「{haiku}」"
-                            logger.info(f"[俳句] {message}")
-                            twitch.send_comment(message)
-                            self.log_queue.put(f"COMMENT:{message}")
+                        event_func = random.choice(event_list)
+                        event_func()
                     except Exception as e:
-                        logger.warning(f"[俳句] 生成失敗: {e}")
+                        logger.warning(f"[イベント] 生成失敗: {e}")
 
-                    # 次の俳句タイマーをリセット
-                    last_haiku_time[0] = time.time()
-                    next_haiku_interval = random.randint(25 * 60, 35 * 60)
-                    logger.info(f"[俳句] 次の一句まで {next_haiku_interval // 60} 分")
+                    last_event_time[0] = time.time()
+                    next_event_interval = random.randint(15 * 60, 25 * 60)
+                    logger.info(f"[イベント] 次まで {next_event_interval // 60} 分")
 
         except Exception as e:
             logging.getLogger("gui_bot").error(f"Bot実行エラー: {e}")
