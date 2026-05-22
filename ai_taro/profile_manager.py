@@ -108,6 +108,20 @@ class ProfileManager:
         if friends:
             lines.append(f"- よく一緒にプレイする仲間: {', '.join(friends[-10:])}")
 
+        # 視聴者のユーザー名と呼び名の対応（設定済みのみ）
+        viewer_names = self._profile.get('viewer_names', {})
+        if viewer_names:
+            name_list = []
+            for username, display in viewer_names.items():
+                if display is None or display == "未設定":
+                    continue
+                if isinstance(display, list):
+                    name_list.append(f"{username}={'/'.join(display)}")
+                else:
+                    name_list.append(f"{username}={display}")
+            if name_list:
+                lines.append(f"- 視聴者の呼び名: {', '.join(name_list)}")
+
         # 常連視聴者
         viewer_ctx = self.get_viewer_context()
         if viewer_ctx:
@@ -189,9 +203,20 @@ JSONのみ出力してください。例: {{"friends": ["あおちゃん", "beet
             samples.append(content[:30])
             if len(samples) > 3:
                 samples.pop(0)
-        # 常連（10回以上）は known_friends にも追加
+
+        # viewer_names に未登録なら「未設定」として追加
+        viewer_names = self._profile.setdefault('viewer_names', {})
+        if username not in viewer_names:
+            viewer_names[username] = "未設定"
+            logger.info(f"[視聴者登録] {username} を未設定として追加しました")
+        # 常連（10回以上）は known_friends にも追加（viewer_namesに登録済みの呼び名で）
         if viewers[username]['count'] >= 10:
-            self.add_friend(username)
+            viewer_names = self._profile.get('viewer_names', {})
+            display = viewer_names.get(username)
+            if display is None:
+                return  # 無視リストはスキップ
+            name = display[0] if isinstance(display, list) else display
+            self.add_friend(name)
 
     def get_viewer_context(self) -> str:
         """視聴者情報をプロンプト用テキストで返す"""

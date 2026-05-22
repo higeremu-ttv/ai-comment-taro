@@ -1,5 +1,5 @@
 """
-AIコメント太郎 - GUI管理アプリ v3.60
+AIコメント太郎 - GUI管理アプリ v3.64
 tkinterを使ったデスクトップGUIアプリです。
 このファイルを実行するとGUIが起動します: python gui_app.py
 """
@@ -26,7 +26,7 @@ class QueueHandler(logging.Handler):
 class BotGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("AIコメント太郎 v3.60")
+        self.root.title("AIコメント太郎 v3.64")
         self.root.geometry("820x660")
         self.root.resizable(True, True)
         self.root.configure(bg="#1a1a2e")
@@ -121,7 +121,7 @@ class BotGUI:
         header = tk.Frame(self.root, bg=self.colors["bg"], pady=10)
         header.pack(fill="x", padx=16)
 
-        tk.Label(header, text="🎮  AIコメント太郎  v3.60",
+        tk.Label(header, text="🎮  AIコメント太郎  v3.64",
                  bg=self.colors["bg"], fg=self.colors["text"],
                  font=("Yu Gothic UI", 16, "bold")).pack(side="left")
 
@@ -696,7 +696,7 @@ class BotGUI:
 
             logger = logging.getLogger("gui_bot")
             logger.info("=" * 50)
-            logger.info("AIコメント太郎 v3.60 を起動します")
+            logger.info("AIコメント太郎 v3.64 を起動します")
             logger.info(f"チャンネル: #{config.CHANNEL_NAME}")
             logger.info(f"音声認識: Google Web Speech API（日本語）")
             logger.info(f"コメント生成: Gemini API ({config.GEMINI_MODEL})")
@@ -985,23 +985,13 @@ class BotGUI:
             import random
             next_event_interval = random.randint(15 * 60, 25 * 60)
             last_event_time = [time.time()]
+            used_event_words = []  # 今日の配信で使った単語リスト
             logger.info(f"[イベント] 次まで {next_event_interval // 60} 分")
 
             def _call_gemini_flash(prompt: str) -> str:
-                """俳句・謎かけ用にFlashモデルで生成する"""
-                try:
-                    import google.generativeai as genai
-                    genai.configure(api_key=comment_gen.config.GEMINI_API_KEY)
-                    model = genai.GenerativeModel(
-                        model_name='gemini-2.5-flash',
-                        system_instruction=comment_gen.get_system_prompt()
-                    )
-                    response = model.generate_content(prompt)
-                    if response and response.text:
-                        return response.text.strip()
-                except Exception as e:
-                    logger.warning(f"[Flash生成] 失敗、Liteにフォールバック: {e}")
-                return comment_gen._call_gemini(prompt) or ""
+                """俳句・謎かけ用に生成する（Flash-Liteを使用）"""
+                result = comment_gen._call_gemini(prompt)
+                return result or ""
 
             def _build_event_context() -> tuple:
                 """イベント用の会話履歴とゲーム情報を返す"""
@@ -1021,6 +1011,7 @@ class BotGUI:
             def _do_haiku_event():
                 """俳句イベント"""
                 history_text, game_text = _build_event_context()
+                avoid_text = f"・今日すでに使った言葉（{', '.join(used_event_words)}）は絶対に使わないこと\n" if used_event_words else ""
                 if history_text:
                     prompt = (
                         f"あなたはTwitch配信の常連視聴者「コメント太郎」です。\n"
@@ -1030,6 +1021,7 @@ class BotGUI:
                         f"・5・7・5を目安に（字余り・字足らずOK）\n"
                         f"・ありきたりな表現を避け、この配信ならではの言葉を使うこと\n"
                         f"・季語がなくてもOK\n"
+                        f"{avoid_text}"
                         f"・俳句の本文のみ出力（説明・コメント不要）"
                     )
                 else:
@@ -1040,6 +1032,7 @@ class BotGUI:
                         f"・5・7・5を目安に（字余り・字足らずOK）\n"
                         f"・ありきたりな表現を避け、独自の言葉を使うこと\n"
                         f"・季語がなくてもOK\n"
+                        f"{avoid_text}"
                         f"・俳句の本文のみ出力（説明・コメント不要）"
                     )
                 haiku = _call_gemini_flash(prompt)
@@ -1049,10 +1042,14 @@ class BotGUI:
                     logger.info(f"[俳句] {message}")
                     twitch.send_comment(message)
                     self.log_queue.put(f"COMMENT:{message}")
+                    # 使った単語を記録（2文字以上の名詞的な単語）
+                    words = [w for w in haiku.replace('　', ' ').split() if len(w) >= 2]
+                    used_event_words.extend(words)
 
             def _do_nazokake_event():
                 """謎かけイベント"""
                 history_text, game_text = _build_event_context()
+                avoid_text = f"・今日すでに使った言葉（{', '.join(used_event_words)}）は絶対に使わないこと\n" if used_event_words else ""
                 if history_text:
                     prompt = (
                         f"あなたはTwitch配信の常連視聴者「コメント太郎」です。\n"
@@ -1064,6 +1061,7 @@ class BotGUI:
                         f"・答え（その心は）は意外性があり、思わず笑えるひねりを効かせること\n"
                         f"・「どちらも〜」という当たり前の答えは絶対禁止\n"
                         f"・配信ならではのワードや状況を活かすこと\n"
+                        f"{avoid_text}"
                         f"・謎かけ本文のみ出力（説明不要）"
                     )
                 else:
@@ -1075,6 +1073,7 @@ class BotGUI:
                         f"・「／」で前半と後半を必ず区切ること\n"
                         f"・答え（その心は）は意外性があり、思わず笑えるひねりを効かせること\n"
                         f"・「どちらも〜」という当たり前の答えは絶対禁止\n"
+                        f"{avoid_text}"
                         f"・謎かけ本文のみ出力（説明不要）"
                     )
                 result = _call_gemini_flash(prompt)
@@ -1094,6 +1093,10 @@ class BotGUI:
                         logger.info(f"[謎かけ後半] {msg2}")
                         twitch.send_comment_priority(msg2)
                         self.log_queue.put(f"COMMENT:{msg2}")
+                        # 使った単語を記録
+                        all_text = first + " " + second
+                        words = [w for w in all_text.replace('、', ' ').replace('。', ' ').split() if len(w) >= 2]
+                        used_event_words.extend(words)
 
             # イベントリスト（今後追加しやすい構造）
             event_list = [_do_haiku_event, _do_nazokake_event]
