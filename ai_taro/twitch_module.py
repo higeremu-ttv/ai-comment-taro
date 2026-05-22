@@ -271,8 +271,10 @@ class TwitchModule:
                         try:
                             # 優先キューを先にチェック（謎かけ等）
                             message = None
+                            is_priority = False
                             try:
                                 message = priority_queue.get_nowait()
+                                is_priority = True
                             except queue.Empty:
                                 pass
 
@@ -293,12 +295,13 @@ class TwitchModule:
                                     await asyncio.sleep(5)
                                     continue
 
-                            # レートリミット: 前回送信から一定時間待機
-                            elapsed = time.time() - self._last_send_time_ref[0]
-                            if elapsed < config.COMMENT_COOLDOWN_SECONDS:
-                                wait_time = config.COMMENT_COOLDOWN_SECONDS - elapsed
-                                logger.debug(f"クールダウン中... {wait_time:.1f}秒待機")
-                                await asyncio.sleep(wait_time)
+                            # レートリミット: 前回送信から一定時間待機（優先キューはスキップ）
+                            if not is_priority:
+                                elapsed = time.time() - self._last_send_time_ref[0]
+                                if elapsed < config.COMMENT_COOLDOWN_SECONDS:
+                                    wait_time = config.COMMENT_COOLDOWN_SECONDS - elapsed
+                                    logger.debug(f"クールダウン中... {wait_time:.1f}秒待機")
+                                    await asyncio.sleep(wait_time)
 
                             # メッセージ送信
                             await self._channel.send(message)
