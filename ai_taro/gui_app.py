@@ -1,5 +1,5 @@
 """
-AIコメント太郎 - GUI管理アプリ v3.64
+AIコメント太郎 - GUI管理アプリ v3.65
 tkinterを使ったデスクトップGUIアプリです。
 このファイルを実行するとGUIが起動します: python gui_app.py
 """
@@ -26,7 +26,7 @@ class QueueHandler(logging.Handler):
 class BotGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("AIコメント太郎 v3.64")
+        self.root.title("AIコメント太郎 v3.65")
         self.root.geometry("820x660")
         self.root.resizable(True, True)
         self.root.configure(bg="#1a1a2e")
@@ -121,7 +121,7 @@ class BotGUI:
         header = tk.Frame(self.root, bg=self.colors["bg"], pady=10)
         header.pack(fill="x", padx=16)
 
-        tk.Label(header, text="🎮  AIコメント太郎  v3.64",
+        tk.Label(header, text="🎮  AIコメント太郎  v3.65",
                  bg=self.colors["bg"], fg=self.colors["text"],
                  font=("Yu Gothic UI", 16, "bold")).pack(side="left")
 
@@ -696,7 +696,7 @@ class BotGUI:
 
             logger = logging.getLogger("gui_bot")
             logger.info("=" * 50)
-            logger.info("AIコメント太郎 v3.64 を起動します")
+            logger.info("AIコメント太郎 v3.65 を起動します")
             logger.info(f"チャンネル: #{config.CHANNEL_NAME}")
             logger.info(f"音声認識: Google Web Speech API（日本語）")
             logger.info(f"コメント生成: Gemini API ({config.GEMINI_MODEL})")
@@ -1011,7 +1011,10 @@ class BotGUI:
             def _do_haiku_event():
                 """俳句イベント"""
                 history_text, game_text = _build_event_context()
-                avoid_text = f"・今日すでに使った言葉（{', '.join(used_event_words)}）は絶対に使わないこと\n" if used_event_words else ""
+                stream_info = getattr(comment_gen, '_stream_info', {})
+                title_words = [w for w in (stream_info.get('title', '') or '').replace('　', ' ').split() if len(w) >= 2]
+                all_avoid = list(set(used_event_words + title_words))
+                avoid_text = f"・次の言葉は絶対に使わないこと（{', '.join(all_avoid)}）\n" if all_avoid else ""
                 if history_text:
                     prompt = (
                         f"あなたはTwitch配信の常連視聴者「コメント太郎」です。\n"
@@ -1049,7 +1052,10 @@ class BotGUI:
             def _do_nazokake_event():
                 """謎かけイベント"""
                 history_text, game_text = _build_event_context()
-                avoid_text = f"・今日すでに使った言葉（{', '.join(used_event_words)}）は絶対に使わないこと\n" if used_event_words else ""
+                stream_info = getattr(comment_gen, '_stream_info', {})
+                title_words = [w for w in (stream_info.get('title', '') or '').replace('　', ' ').split() if len(w) >= 2]
+                all_avoid = list(set(used_event_words + title_words))
+                avoid_text = f"・次の言葉は絶対に使わないこと（{', '.join(all_avoid)}）\n" if all_avoid else ""
                 if history_text:
                     prompt = (
                         f"あなたはTwitch配信の常連視聴者「コメント太郎」です。\n"

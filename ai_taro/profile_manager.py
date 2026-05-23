@@ -213,8 +213,8 @@ JSONのみ出力してください。例: {{"friends": ["あおちゃん", "beet
         if viewers[username]['count'] >= 10:
             viewer_names = self._profile.get('viewer_names', {})
             display = viewer_names.get(username)
-            if display is None:
-                return  # 無視リストはスキップ
+            if display is None or display == "未設定":
+                return  # 無視リスト・未設定はスキップ
             name = display[0] if isinstance(display, list) else display
             self.add_friend(name)
 
