@@ -1,5 +1,5 @@
 """
-AIコメント太郎 - GUI管理アプリ v3.65
+AIコメント太郎 - GUI管理アプリ v3.66
 tkinterを使ったデスクトップGUIアプリです。
 このファイルを実行するとGUIが起動します: python gui_app.py
 """
@@ -26,7 +26,7 @@ class QueueHandler(logging.Handler):
 class BotGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("AIコメント太郎 v3.65")
+        self.root.title("AIコメント太郎 v3.66")
         self.root.geometry("820x660")
         self.root.resizable(True, True)
         self.root.configure(bg="#1a1a2e")
@@ -121,7 +121,7 @@ class BotGUI:
         header = tk.Frame(self.root, bg=self.colors["bg"], pady=10)
         header.pack(fill="x", padx=16)
 
-        tk.Label(header, text="🎮  AIコメント太郎  v3.65",
+        tk.Label(header, text="🎮  AIコメント太郎  v3.66",
                  bg=self.colors["bg"], fg=self.colors["text"],
                  font=("Yu Gothic UI", 16, "bold")).pack(side="left")
 
@@ -696,7 +696,7 @@ class BotGUI:
 
             logger = logging.getLogger("gui_bot")
             logger.info("=" * 50)
-            logger.info("AIコメント太郎 v3.65 を起動します")
+            logger.info("AIコメント太郎 v3.66 を起動します")
             logger.info(f"チャンネル: #{config.CHANNEL_NAME}")
             logger.info(f"音声認識: Google Web Speech API（日本語）")
             logger.info(f"コメント生成: Gemini API ({config.GEMINI_MODEL})")
@@ -1019,10 +1019,11 @@ class BotGUI:
                     prompt = (
                         f"あなたはTwitch配信の常連視聴者「コメント太郎」です。\n"
                         f"{game_text}"
-                        f"今日の配信でこんな会話がありました：\n{history_text}\n\n"
-                        f"この配信の雰囲気・出来事・感情を詠んだ俳句を一句作ってください。\n"
-                        f"・5・7・5を目安に（字余り・字足らずOK）\n"
-                        f"・ありきたりな表現を避け、この配信ならではの言葉を使うこと\n"
+                        f"今日の配信の雰囲気：\n{history_text}\n\n"
+                        f"上記をヒントに俳句を一句作ってください。\n"
+                        f"【厳守】5・7・5の音節を必ず守ること。声に出して音節を数えてから出力すること。\n"
+                        f"・会話を全部詰め込まなくていい。雰囲気や感情だけ拾えれば十分\n"
+                        f"・ありきたりな表現を避けること\n"
                         f"・季語がなくてもOK\n"
                         f"{avoid_text}"
                         f"・俳句の本文のみ出力（説明・コメント不要）"
@@ -1031,8 +1032,8 @@ class BotGUI:
                     prompt = (
                         f"あなたはTwitch配信の常連視聴者「コメント太郎」です。\n"
                         f"{game_text}"
-                        f"配信を見ている今この瞬間の気持ちを俳句にしてください。\n"
-                        f"・5・7・5を目安に（字余り・字足らずOK）\n"
+                        f"今この瞬間の気持ちを俳句にしてください。\n"
+                        f"【厳守】5・7・5の音節を必ず守ること。声に出して音節を数えてから出力すること。\n"
                         f"・ありきたりな表現を避け、独自の言葉を使うこと\n"
                         f"・季語がなくてもOK\n"
                         f"{avoid_text}"
@@ -1060,13 +1061,13 @@ class BotGUI:
                     prompt = (
                         f"あなたはTwitch配信の常連視聴者「コメント太郎」です。\n"
                         f"{game_text}"
-                        f"今日の配信でこんな会話がありました：\n{history_text}\n\n"
-                        f"この配信の内容をもとに謎かけを一つ作ってください。\n"
+                        f"今日の配信の雰囲気（参考程度）：\n{history_text}\n\n"
+                        f"謎かけを一つ作ってください。会話に引っ張られすぎず、面白さ・意外性を最優先にすること。\n"
                         f"形式：「○○とかけて△△と解く、その心は／□□」\n"
                         f"・「／」で前半と後半を必ず区切ること\n"
                         f"・答え（その心は）は意外性があり、思わず笑えるひねりを効かせること\n"
                         f"・「どちらも〜」という当たり前の答えは絶対禁止\n"
-                        f"・配信ならではのワードや状況を活かすこと\n"
+                        f"・配信の会話はあくまで参考。無理に拾わなくていい\n"
                         f"{avoid_text}"
                         f"・謎かけ本文のみ出力（説明不要）"
                     )
@@ -1074,7 +1075,7 @@ class BotGUI:
                     prompt = (
                         f"あなたはTwitch配信の常連視聴者「コメント太郎」です。\n"
                         f"{game_text}"
-                        f"配信の雰囲気をもとに謎かけを一つ作ってください。\n"
+                        f"謎かけを一つ作ってください。面白さ・意外性を最優先にすること。\n"
                         f"形式：「○○とかけて△△と解く、その心は／□□」\n"
                         f"・「／」で前半と後半を必ず区切ること\n"
                         f"・答え（その心は）は意外性があり、思わず笑えるひねりを効かせること\n"
