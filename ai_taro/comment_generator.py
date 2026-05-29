@@ -313,6 +313,10 @@ class CommentGenerator:
             if self._contains_ng_word(comment):
                 return None
 
+            # 内部プロンプト（命令文）がそのまま漏れていたら破棄
+            if self._looks_like_prompt_leak(comment):
+                return None
+
             return comment
 
         except Exception as e:
@@ -347,6 +351,36 @@ class CommentGenerator:
         for word in ng_words:
             if word in text:
                 logger.warning(f"[NGワード検出] '{word}' が含まれているためスキップします")
+                return True
+        return False
+
+    # 普通の視聴者コメントには絶対に出てこない、内部プロンプト由来の言い回し。
+    # Geminiが指示文をオウム返しした場合、これらが本文に混じる。
+    PROMPT_LEAK_MARKERS = [
+        "【重要】",
+        "20文字以上",
+        "1〜2文で",
+        "1文で書いて",
+        "で書いてください",
+        "返答してください",
+        "完結した文章",
+        "書き切ること",
+        "この話題はそろそろ終わり",
+        "テーマのヒント",
+        "音声認識のため",
+        "誤変換や途切れ",
+        "深掘り質問",
+        "【配信者の発言】",
+        "【現在のゲーム画面】",
+        "これまでの会話の流れ",
+        "自然な友達口調",
+    ]
+
+    def _looks_like_prompt_leak(self, text: str) -> bool:
+        """生成結果に内部プロンプト（命令文）が漏れていないかチェックする"""
+        for marker in self.PROMPT_LEAK_MARKERS:
+            if marker in text:
+                logger.warning(f"[プロンプト漏れ検出] '{marker}' が含まれているため投稿を破棄します: {repr(text[:40])}")
                 return True
         return False
 
