@@ -1,4 +1,4 @@
-# Twitch AI Comment Bot v2.06 - 依存ライブラリ
+# AIコメント太郎 v4.10 - 依存ライブラリ
 # インストール方法: pip install -r requirements.txt
 
 # Twitch IRC Bot

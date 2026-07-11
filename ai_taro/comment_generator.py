@@ -1,5 +1,5 @@
 """
-コメント生成モジュール v3.1
+コメント生成モジュール v4.10
 
 【設計方針】
 - Geminiが返したテキストは基本そのまま出す（補完・検証ロジックなし）
@@ -402,6 +402,10 @@ class CommentGenerator:
             return False
         return True
 
+    def is_in_topic_cooldown(self) -> bool:
+        """話題クールダウン中かどうか（v4.10: lane_manager用の公開メソッド）"""
+        return self._is_in_topic_cooldown()
+
     def _update_conversation_state(self, speech_text: str = ""):
         """会話ステートを更新する"""
         if self._conversation_state == ConversationState.IDLE:
@@ -504,6 +508,72 @@ class CommentGenerator:
         if comment and not self._is_duplicate(comment):
             self._record_comment(comment)
             logger.info(f"[発言反応] コメント生成 (ステート:{self._conversation_state.value}, {self._current_topic_turns}往復): {comment}")
+            return comment
+        return None
+
+    def generate_context_comment(self, digest_text: str) -> Optional[str]:
+        """文脈レーン用：貯まった発言をまとめて1コメント生成する（v4.10）。
+
+        ペース管理（クールダウン）はlane_manager側が唯一の持ち主なので、
+        ここではコメント間隔のチェックを行わない。
+        話題クールダウン・NGワード・重複チェックは行う。
+        """
+        if not digest_text or not digest_text.strip():
+            return None
+
+        # NGワードチェック（Geminiに送る前に弾く）
+        if self._contains_ng_word(digest_text):
+            logger.warning("[入力NGワード] 文脈にポリシー違反の可能性があるためスキップ")
+            return None
+
+        # 話題クールダウン中はスキップ
+        if self._is_in_topic_cooldown():
+            return None
+
+        # 会話履歴用に1行テキスト化（メモの箇条書き記号を除去）
+        speech_line = digest_text.replace('・', ' ').replace('\n', ' ').strip()
+
+        # 着地ステートの場合は締めのコメント
+        if self._conversation_state == ConversationState.LANDING:
+            comment = self._generate_landing_comment(speech_line)
+            if comment:
+                self._conversation_history.append({"role": "streamer", "content": speech_line[:120]})
+                if len(self._conversation_history) > 20:
+                    self._conversation_history.pop(0)
+                self._record_comment(comment)
+                self._conversation_state = ConversationState.COOLDOWN
+                self._topic_end_time = time.time()
+                self._current_topic_turns = 0
+                logger.info(f"[着地] {comment} → {self._topic_cooldown}秒クールダウン開始")
+                return comment
+            return None
+
+        history_text = self._build_history_text()
+
+        # ステートに応じてヒントを変える（ステート更新は成功時のみ＝リトライ安全）
+        if self._conversation_state == ConversationState.DEEPENING:
+            style_hint = f"この話題はすでに{self._current_topic_turns}往復しています。深掘り質問か自分の意見を述べてください。"
+        else:
+            style_hint = "深掘り質問・共感・ツッコミ・自分の意見など自由なスタイルで返してください。"
+
+        prompt = f"""{history_text}【配信者のここ最近の発言（音声認識・古い順）】
+{digest_text}
+
+※音声認識のため誤変換や途切れがある場合があります。文脈から意図を推測してください。
+※発言の全部に触れる必要はありません。一番面白い・気になる部分をひとつ拾って反応してください。
+
+{style_hint}
+自然な日本語で1〜2文で返答してください。
+【重要】必ず20文字以上の完結した文章で書くこと。「え、」「やばい、」など途中で終わることは禁止。"""
+
+        comment = self._call_gemini(prompt)
+        if comment and not self._is_duplicate(comment):
+            self._conversation_history.append({"role": "streamer", "content": speech_line[:120]})
+            if len(self._conversation_history) > 20:
+                self._conversation_history.pop(0)
+            self._update_conversation_state(speech_line)
+            self._record_comment(comment)
+            logger.info(f"[文脈反応] コメント生成 (ステート:{self._conversation_state.value}, {self._current_topic_turns}往復): {comment}")
             return comment
         return None
 

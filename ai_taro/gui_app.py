@@ -1,7 +1,12 @@
 """
-AIコメント太郎 - GUI管理アプリ v4.00
+AIコメント太郎 - GUI管理アプリ v4.10
 tkinterを使ったデスクトップGUIアプリです。
 このファイルを実行するとGUIが起動します: python gui_app.py
+
+v4.10（Phase 2: 二レーン化）:
+- 発言の振り分け・文脈メモ・切れ目検知・ちょっかい判定を lane_manager.py に分離
+- クールダウン中の発言廃棄（実戦で32%）を解消
+- 呼びかけ・視聴者コマンドは優先送信で数秒応答に
 """
 
 import tkinter as tk
@@ -26,7 +31,7 @@ class QueueHandler(logging.Handler):
 class BotGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("AIコメント太郎 v4.00")
+        self.root.title("AIコメント太郎 v4.10")
         self.root.geometry("820x660")
         self.root.resizable(True, True)
         self.root.configure(bg="#1a1a2e")
@@ -121,7 +126,7 @@ class BotGUI:
         header = tk.Frame(self.root, bg=self.colors["bg"], pady=10)
         header.pack(fill="x", padx=16)
 
-        tk.Label(header, text="🎮  AIコメント太郎  v4.00",
+        tk.Label(header, text="🎮  AIコメント太郎  v4.10",
                  bg=self.colors["bg"], fg=self.colors["text"],
                  font=("Yu Gothic UI", 16, "bold")).pack(side="left")
 
@@ -647,7 +652,8 @@ class BotGUI:
         try:
             # モジュールを再読み込みして最新の設定を反映
             for mod_name in ["config", "audio_module",
-                             "comment_generator", "twitch_module"]:
+                             "comment_generator", "twitch_module",
+                             "lane_manager"]:
                 if mod_name in sys.modules:
                     del sys.modules[mod_name]
 
@@ -655,6 +661,7 @@ class BotGUI:
             from audio_module import AudioModule
             from comment_generator import CommentGenerator, CommentTrigger
             from twitch_module import TwitchModule
+            from lane_manager import LaneManager
 
             # モジュール再インポート後、ルートロガーのハンドラーを再度クリーンアップしてQueueHandlerのみにする
             # （モジュールインポート時に追加ハンドラーが生じる場合の対策）
@@ -675,7 +682,7 @@ class BotGUI:
 
             logger = logging.getLogger("gui_bot")
             logger.info("=" * 50)
-            logger.info("AIコメント太郎 v4.00 を起動します")
+            logger.info("AIコメント太郎 v4.10 を起動します")
             logger.info(f"チャンネル: #{config.CHANNEL_NAME}")
             _engine = getattr(config, 'SPEECH_ENGINE', 'whisper')
             _engine_label = f"faster-whisper {getattr(config, 'WHISPER_MODEL_SIZE', 'medium')}（ローカル）" if _engine == 'whisper' else "Google Web Speech API"
@@ -683,6 +690,7 @@ class BotGUI:
             logger.info(f"コメント生成: Gemini API ({config.GEMINI_MODEL})")
             logger.info(f"発言フィルター: {config.SPEECH_MIN_LENGTH}文字以下を無視")
             logger.info(f"会話ステート: 最大{config.CONVERSATION_MAX_TURNS}往復 / {config.TOPIC_COOLDOWN_SECONDS}秒クールダウン")
+            logger.info(f"二レーン化: 切れ目{getattr(config, 'CONTEXT_GAP_SECONDS', 7)}秒 / 最低間隔{config.COMMENT_COOLDOWN_SECONDS}秒 / ちょっかい確率{int(getattr(config, 'CHOKKAI_PROBABILITY', 0.25) * 100)}%")
             logger.info("=" * 50)
 
             comment_gen = CommentGenerator(config)
@@ -695,229 +703,24 @@ class BotGUI:
                 "comment_gen": comment_gen,
             }
 
-            last_comment_time = [0.0]
+            # ============================================================
+            # v4.10: 二レーン化（Phase 2）
+            # 発言の振り分け・文脈メモ・切れ目検知・ちょっかい判定は
+            # すべて lane_manager.py に分離した。
+            # ・即時レーン: 呼びかけ/コマンド/名指し → クールダウン無視・優先送信
+            # ・文脈レーン: 独り言を貯めて会話の切れ目で1コメント（廃棄ゼロ）
+            # ============================================================
+            lanes = LaneManager(
+                config, comment_gen, twitch, audio,
+                log_queue=self.log_queue,
+                state_display=lambda: self._update_state_display(comment_gen),
+            )
 
-            # 発言バッファ用変数
-            speech_buffer = []
-            speech_timer = [None]
-            unrecognized_count = [0]
-
-            def can_send():
-                # クールダウンチェック
-                if (time.time() - last_comment_time[0]) < config.COMMENT_COOLDOWN_SECONDS:
-                    return False
-                # チャットが活発なときは黙る
-                if twitch.is_chat_active():
-                    quiet_seconds = getattr(config, 'CHAT_QUIET_RESUME_SECONDS', 30)
-                    last_chat = twitch.get_last_chat_time()
-                    if last_chat > 0 and (time.time() - last_chat) < quiet_seconds:
-                        logger.debug("チャットが活発なためbotは黙黙中")
-                        return False
-                return True
-
-            def process_speech_buffer():
-                """バッファに溜まった発言をまとめて処理する"""
-                # v4.00: タイマースレッド内の例外はどこにも表示されず
-                # 発言が黙って消えるため、全体をtry/exceptで保護してログに残す
-                try:
-                    _process_speech_buffer_inner()
-                except Exception as e:
-                    logger.error(f"[発言処理エラー] {e}", exc_info=True)
-
-            def _process_speech_buffer_inner():
-                if not speech_buffer:
-                    return
-
-                # Bot停止後は処理しない
-                if not self.bot_running:
-                    speech_buffer.clear()
-                    return
-
-                combined_text = " ".join(speech_buffer)
-                speech_buffer.clear()
-
-                # AI名前呼びかけの検出（クールダウンをバイパス）
-                # v4.00: 「AIコメント太郎」完全一致でしか反応しなかったのを修正。
-                # 音声認識は「太郎」「コメント太郎」と書き起こすことが多いため、
-                # 呼び名のバリエーションすべてを文頭マッチで判定する。
-                ai_name = getattr(config, 'AI_NAME', 'AIコメント太郎')
-                name_variants = sorted(
-                    {ai_name, 'AIコメント太郎', 'コメント太郎', '太郎'},
-                    key=len, reverse=True  # 長い名前から先に照合（「太郎」誤爆防止）
-                )
-                is_direct_call = False
-                direct_question = combined_text
-                for name in name_variants:
-                    if not combined_text.startswith(name):
-                        continue
-                    rest = combined_text[len(name):]
-                    for sep in ['、', '，', ' ', '。', '！', '？']:
-                        if rest.startswith(sep):
-                            rest = rest[len(sep):]
-                            break
-                    is_direct_call = True
-                    direct_question = rest.strip()
-                    break
-
-                if is_direct_call:
-                    logger.info(f"[{ai_name}呼びかけ] {direct_question}")
-                    comment = comment_gen.generate(
-                        CommentTrigger.DIRECT_CONVERSATION,
-                        speech_text=direct_question or combined_text
-                    )
-                    if comment:
-                        logger.info(f"コメント送信: {comment}")
-                        self.log_queue.put(f"COMMENT:{comment}")
-                        twitch.send_comment(comment)
-                        last_comment_time[0] = time.time()
-                        self._update_state_display(comment_gen)
-                    return
-
-                if not can_send():
-                    # v4.00: 未定義メソッド _is_search_trigger の呼び出しを削除
-                    # （v3.50の検索機能削除時の残骸。クールダウン中の発言処理が
-                    #   毎回AttributeErrorで静かに死んでいた）
-                    logger.info(f"クールダウン中のためスキップ: {combined_text[:30]}")
-                    return
-
-                logger.info(f"まとまった発言を処理: {combined_text}")
-
-                comment = comment_gen.generate(
-                    CommentTrigger.SPEECH_RESPONSE,
-                    speech_text=combined_text
-                )
-                if comment:
-                    logger.info(f"コメント送信: {comment}")
-                    self.log_queue.put(f"COMMENT:{comment}")
-                    twitch.send_comment(comment)
-                    last_comment_time[0] = time.time()
-                    # 会話ステートを更新表示
-                    self._update_state_display(comment_gen)
-
-            def on_speech(text):
-                # 発言をバッファに追加
-                speech_buffer.append(text)
-                unrecognized_count[0] = 0  # 成功したらリセット
-
-                # 既存のタイマーをキャンセル
-                if speech_timer[0] is not None:
-                    speech_timer[0].cancel()
-
-                # 12秒後にバッファを処理するタイマーをセット
-                speech_timer[0] = threading.Timer(12.0, process_speech_buffer)
-                speech_timer[0].daemon = True
-                speech_timer[0].start()
-
-            def on_unrecognized(consecutive: int = 1):
-                unrecognized_count[0] = consecutive
-                threshold = getattr(config, 'UNRECOGNIZED_THRESHOLD', 6)
-                # しきい値回数連続で短時間に聞き取れなかった場合のみ反応
-                if consecutive >= threshold:
-                    unrecognized_count[0] = 0
-                    if not can_send():
-                        return
-
-                    comment = comment_gen.generate(
-                        CommentTrigger.UNRECOGNIZED_SPEECH
-                    )
-                    if comment:
-                        logger.info(f"コメント送信: {comment}")
-                        self.log_queue.put(f"COMMENT:{comment}")
-                        twitch.send_comment(comment)
-                        last_comment_time[0] = time.time()
-
-            def on_silence():
-                if not can_send():
-                    return
-                comment = comment_gen.generate(
-                    CommentTrigger.SILENCE_BREAKER
-                )
-                if comment:
-                    logger.info(f"コメント送信: {comment}")
-                    self.log_queue.put(f"COMMENT:{comment}")
-                    twitch.send_comment(comment)
-                    last_comment_time[0] = time.time()
-                    self._update_state_display(comment_gen)
-
-            # 視聴者コマンドコールバックを設定
-            def on_viewer_command(command_str, username):
-                """視聴者コマンドを受け取ったときの処理"""
-                comment = comment_gen.generate(
-                    CommentTrigger.VIEWER_COMMAND,
-                    speech_text=command_str,
-                    username=username
-                )
-                if comment:
-                    logger.info(f"[視聴者コマンド] {username} → {comment}")
-                    self.log_queue.put(f"COMMENT:{comment}")
-                    twitch.send_comment(comment)
-
-            twitch.set_viewer_command_callback(on_viewer_command)
-
-            # 視聴者コメント・ボット通知への反応コールバック
-            last_viewer_reaction_time = [0.0]
-
-            def on_viewer_comment(content, username, is_bot=False):
-                if not getattr(config, 'VIEWER_COMMENT_REACTION_ENABLED', True):
-                    return
-
-                # ボット通知はクールダウンありで反応（頻度を抑える）
-                import time as _time
-                now = _time.time()
-                if is_bot:
-                    bot_cooldown = 300  # ボット通知は5分に1回
-                    if now - last_viewer_reaction_time[0] < bot_cooldown:
-                        return
-                    trigger_label = "ボット通知"
-                    prompt = f"Twitchのボット通知：「{content}」。これを読んで視聴者として一言コメントしてください。日本語1文のみ。"
-                else:
-                    # 視聴者コメントを学習
-                    profile_mgr = getattr(comment_gen, '_profile_manager', None)
-                    if profile_mgr:
-                        profile_mgr.add_viewer_comment(username, content)
-
-                    # 視聴者コメントを会話履歴にも追加（俳句の材料にする）
-                    if not is_bot and len(content) >= 4:
-                        comment_gen._conversation_history.append({
-                            'role': 'viewer',
-                            'content': f"{username}：{content}"
-                        })
-
-                    ai_name = getattr(config, 'AI_NAME', '太郎')
-                    is_name_mention = ai_name in content or 'コメント太郎' in content
-
-                    if not is_name_mention:
-                        # 通常視聴者コメントは30秒クールダウン
-                        cooldown = getattr(config, 'VIEWER_COMMENT_REACTION_COOLDOWN', 30)
-                        if now - last_viewer_reaction_time[0] < cooldown:
-                            return
-
-                    trigger_label = "視聴者コメント"
-                    # 常連かどうかで反応を変える
-                    profile_mgr = getattr(comment_gen, '_profile_manager', None)
-                    viewer_count = 0
-                    if profile_mgr:
-                        viewers = profile_mgr._profile.get('known_viewers', {})
-                        viewer_count = viewers.get(username, {}).get('count', 0)
-
-                    if viewer_count >= 5:
-                        prompt = f"常連の「{username}」が「{content}」とコメントしました。親しみを込めて視聴者として自然に1文で反応してください。日本語のみ。"
-                    else:
-                        prompt = f"Twitchチャットに「{username}」が「{content}」と書きました。視聴者として自然に1文で反応してください。日本語のみ。"
-
-                logger.info(f"[{trigger_label}反応] {username}: {content}")
-                comment = comment_gen._call_gemini(prompt)
-                if comment:
-                    last_viewer_reaction_time[0] = now
-                    logger.info(f"[{trigger_label}] → {comment}")
-                    self.log_queue.put(f"COMMENT:{comment}")
-                    twitch.send_comment(comment)
-
-            twitch.set_viewer_comment_callback(on_viewer_comment)
-
-            audio.set_speech_callback(on_speech)
-            audio.set_silence_callback(on_silence)
-            audio.set_unrecognized_callback(on_unrecognized)
+            # 入力の受け口をレーン管理に接続
+            audio.set_speech_callback(lanes.on_speech)
+            audio.set_silence_callback(lanes.on_silence)
+            twitch.set_viewer_command_callback(lanes.on_viewer_command)
+            twitch.set_viewer_comment_callback(lanes.on_viewer_comment)
 
             logger.info("Twitch接続を開始します...")
             twitch.start()
@@ -1069,6 +872,12 @@ class BotGUI:
 
             while self.bot_running:
                 time.sleep(1)
+
+                # v4.10: 文脈レーンの切れ目検知（毎秒チェック）
+                try:
+                    lanes.tick()
+                except Exception as e:
+                    logger.error(f"[文脈レーン] tick処理エラー: {e}", exc_info=True)
 
                 # イベントタイマーチェック
                 now = time.time()

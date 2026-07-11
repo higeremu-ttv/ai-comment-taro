@@ -227,11 +227,18 @@ JSONのみ出力してください。例: {{"friends": ["あおちゃん", "beet
         top = sorted(viewers.items(), key=lambda x: x[1]['count'], reverse=True)[:5]
         names = [f"{u}({d['count']}回)" for u, d in top]
         return f"- よく来る視聴者: {', '.join(names)}"
-        """正規表現で仲間の名前を抽出（フォールバック用）"""
+
+    def _update_from_conversation_regex(self, conversation_history: list):
+        """正規表現で仲間の名前を抽出（フォールバック用）
+
+        v4.10: 関数定義の行が欠落していて呼び出すと必ずAttributeErrorになる
+        バグを修復（Gemini抽出失敗時にプロフィール学習が黙って消えていた）。
+        あわせてカタカナの名前（ターボさん等）も拾えるように正規表現を拡張。
+        """
         import re
         for msg in conversation_history:
             content = msg.get('content', '')
-            words = re.findall(r'[ぁ-ん一-龥a-zA-Z]{2,8}(?:さん|くん|ちゃん)', content)
+            words = re.findall(r'[ぁ-んァ-ヶー一-龥a-zA-Z]{2,8}(?:さん|くん|ちゃん)', content)
             for word in words:
                 if len(word) >= 3:
                     self.add_friend(word)

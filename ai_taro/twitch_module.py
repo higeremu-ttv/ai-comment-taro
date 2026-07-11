@@ -1,6 +1,12 @@
 """
-Twitch連携モジュール
+Twitch連携モジュール v4.10
 TwitchのIRC（チャット）にbotアカウントとしてコメントを投稿します。
+
+v4.10の変更:
+- 送信側の45秒待ち（二重クールダウン）を廃止し、連投防止（2秒）のみに変更。
+  コメントのペース管理は lane_manager が唯一の持ち主。
+- 送信失敗時にメッセージを失わず、時間を置いて再送するように変更
+  （配信オフライン時の「Cannot write to closing transport」対策）
 """
 
 import asyncio
@@ -266,45 +272,78 @@ class TwitchModule:
                     logger.error(f"Twitchエラー: {error}")
 
                 async def _message_sender(self):
-                    """キューからメッセージを取り出して送信するループ"""
+                    """キューからメッセージを取り出して送信するループ。
+
+                    v4.10: 45秒待ち（二重クールダウン）を廃止。ペース管理は
+                    lane_manager側が持つため、ここは連投防止の最低間隔のみ。
+                    送信失敗時はメッセージを手元に保持して再送を試みる。
+                    """
+                    pending = None       # 送信失敗時の再送用 (message, is_priority)
+                    fail_count = 0       # 連続失敗回数
                     while True:
                         try:
-                            # 優先キューを先にチェック（謎かけ等）
-                            message = None
-                            is_priority = False
-                            try:
-                                message = priority_queue.get_nowait()
-                                is_priority = True
-                            except queue.Empty:
-                                pass
-
-                            # 優先キューが空なら通常キューをチェック
-                            if message is None:
+                            if pending is not None:
+                                message, is_priority = pending
+                            else:
+                                # 優先キューを先にチェック（呼びかけ・謎かけ等）
+                                message = None
+                                is_priority = False
                                 try:
-                                    message = message_queue.get_nowait()
+                                    message = priority_queue.get_nowait()
+                                    is_priority = True
                                 except queue.Empty:
-                                    await asyncio.sleep(1)
-                                    continue
+                                    pass
 
-                            # チャンネルが取得できていない場合は待機
+                                # 優先キューが空なら通常キューをチェック
+                                if message is None:
+                                    try:
+                                        message = message_queue.get_nowait()
+                                    except queue.Empty:
+                                        await asyncio.sleep(1)
+                                        continue
+
+                            # チャンネルが取得できていない場合は待機（メッセージは保持）
                             if self._channel is None:
                                 self._channel = self.get_channel(config.CHANNEL_NAME)
                                 if self._channel is None:
                                     logger.warning("チャンネルが見つかりません。再試行します...")
-                                    message_queue.put(message)  # キューに戻す
+                                    pending = (message, is_priority)
                                     await asyncio.sleep(5)
                                     continue
 
-                            # レートリミット: 前回送信から一定時間待機（優先キューはスキップ）
+                            # 連投防止: 前回送信から最低間隔だけ空ける（優先キューはスキップ）
                             if not is_priority:
+                                min_interval = getattr(config, 'SEND_MIN_INTERVAL_SECONDS', 2)
                                 elapsed = time.time() - self._last_send_time_ref[0]
-                                if elapsed < config.COMMENT_COOLDOWN_SECONDS:
-                                    wait_time = config.COMMENT_COOLDOWN_SECONDS - elapsed
-                                    logger.debug(f"クールダウン中... {wait_time:.1f}秒待機")
-                                    await asyncio.sleep(wait_time)
+                                if elapsed < min_interval:
+                                    await asyncio.sleep(min_interval - elapsed)
 
                             # メッセージ送信
-                            await self._channel.send(message)
+                            try:
+                                await self._channel.send(message)
+                            except Exception as e:
+                                # 送信失敗（配信オフライン・接続切れ等）。
+                                # メッセージを失わず、時間を置いて再送する
+                                fail_count += 1
+                                if fail_count <= 5:
+                                    wait = min(10 * fail_count, 60)
+                                    logger.warning(
+                                        f"送信失敗（{fail_count}回目）: {e} "
+                                        f"→ {wait}秒後に再送します。Twitch接続が切れている可能性があります"
+                                    )
+                                    pending = (message, is_priority)
+                                    self._channel = None  # 次回チャンネルを取り直す
+                                    await asyncio.sleep(wait)
+                                else:
+                                    logger.error(f"送信を{fail_count}回失敗したため、このメッセージは破棄します: {message}")
+                                    pending = None
+                                    fail_count = 0
+                                    await asyncio.sleep(10)
+                                continue
+
+                            # 送信成功
+                            pending = None
+                            fail_count = 0
                             self._last_send_time_ref[0] = time.time()
                             logger.info(f"コメント送信: {message}")
 
