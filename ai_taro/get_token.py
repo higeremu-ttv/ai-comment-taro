@@ -44,15 +44,17 @@ def main():
         token = token.replace("oauth:", "").strip()
 
         print()
-        print("secrets.py に以下の行をコピーして貼り付けてください:")
+        print("taro_secrets.py に以下の行をコピーして貼り付けてください:")
         print()
         print(f'BOT_TOKEN = "{token}"')
         print()
 
         # secrets.pyに自動書き込み
-        secrets_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "secrets.py")
+        secrets_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "taro_secrets.py")
+        if not os.path.exists(secrets_path):
+            secrets_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "secrets.py")
         if os.path.exists(secrets_path):
-            update = input("secrets.py を自動で更新しますか？ (y/N): ").strip().lower()
+            update = input("設定ファイルを自動で更新しますか？ (y/N): ").strip().lower()
             if update == "y":
                 try:
                     with open(secrets_path, "r", encoding="utf-8") as f:
@@ -67,12 +69,12 @@ def main():
                     with open(secrets_path, "w", encoding="utf-8") as f:
                         f.write(new_content)
 
-                    print("✓ secrets.py を更新しました！")
+                    print("✓ 設定ファイルを更新しました！")
                 except Exception as e:
-                    print(f"✗ secrets.py の更新に失敗しました: {e}")
+                    print(f"✗ 設定ファイルの更新に失敗しました: {e}")
                     print("  手動で更新してください。")
         else:
-            print("secrets.py が見つかりません。secrets_sample.py をコピーして作成してください。")
+            print("taro_secrets.py が見つかりません。secrets_sample.py をコピーして作成してください。")
 
     print()
     print("次のステップ:")

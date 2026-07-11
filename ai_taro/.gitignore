@@ -1,5 +1,6 @@
 # 認証情報（絶対にコミットしない）
 secrets.py
+taro_secrets.py
 
 # Pythonキャッシュ
 __pycache__/

@@ -1,5 +1,5 @@
 """
-AIコメント太郎 - GUI管理アプリ v3.68
+AIコメント太郎 - GUI管理アプリ v4.00
 tkinterを使ったデスクトップGUIアプリです。
 このファイルを実行するとGUIが起動します: python gui_app.py
 """
@@ -26,7 +26,7 @@ class QueueHandler(logging.Handler):
 class BotGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("AIコメント太郎 v3.68")
+        self.root.title("AIコメント太郎 v4.00")
         self.root.geometry("820x660")
         self.root.resizable(True, True)
         self.root.configure(bg="#1a1a2e")
@@ -121,7 +121,7 @@ class BotGUI:
         header = tk.Frame(self.root, bg=self.colors["bg"], pady=10)
         header.pack(fill="x", padx=16)
 
-        tk.Label(header, text="🎮  AIコメント太郎  v3.68",
+        tk.Label(header, text="🎮  AIコメント太郎  v4.00",
                  bg=self.colors["bg"], fg=self.colors["text"],
                  font=("Yu Gothic UI", 16, "bold")).pack(side="left")
 
@@ -514,11 +514,14 @@ class BotGUI:
             self._append_log(f"設定の読み込みに失敗しました: {e}", "ERROR")
 
     def save_settings(self):
-        """設定をconfig.pyとsecrets.pyに書き込む"""
+        """設定をconfig.pyとtaro_secrets.pyに書き込む"""
         try:
             base_dir = os.path.dirname(__file__)
             config_path = os.path.join(base_dir, "config.py")
-            secrets_path = os.path.join(base_dir, "secrets.py")
+            # v4.0: taro_secrets.py優先、なければ旧secrets.py
+            secrets_path = os.path.join(base_dir, "taro_secrets.py")
+            if not os.path.exists(secrets_path):
+                secrets_path = os.path.join(base_dir, "secrets.py")
 
             with open(config_path, "r", encoding="utf-8") as f:
                 content = f.read()
@@ -672,9 +675,11 @@ class BotGUI:
 
             logger = logging.getLogger("gui_bot")
             logger.info("=" * 50)
-            logger.info("AIコメント太郎 v3.68 を起動します")
+            logger.info("AIコメント太郎 v4.00 を起動します")
             logger.info(f"チャンネル: #{config.CHANNEL_NAME}")
-            logger.info(f"音声認識: Google Web Speech API（日本語）")
+            _engine = getattr(config, 'SPEECH_ENGINE', 'whisper')
+            _engine_label = f"faster-whisper {getattr(config, 'WHISPER_MODEL_SIZE', 'medium')}（ローカル）" if _engine == 'whisper' else "Google Web Speech API"
+            logger.info(f"音声認識: {_engine_label}")
             logger.info(f"コメント生成: Gemini API ({config.GEMINI_MODEL})")
             logger.info(f"発言フィルター: {config.SPEECH_MIN_LENGTH}文字以下を無視")
             logger.info(f"会話ステート: 最大{config.CONVERSATION_MAX_TURNS}往復 / {config.TOPIC_COOLDOWN_SECONDS}秒クールダウン")
@@ -712,7 +717,7 @@ class BotGUI:
 
             def process_speech_buffer():
                 """バッファに溜まった発言をまとめて処理する"""
-                # v3.68: タイマースレッド内の例外はどこにも表示されず
+                # v4.00: タイマースレッド内の例外はどこにも表示されず
                 # 発言が黙って消えるため、全体をtry/exceptで保護してログに残す
                 try:
                     _process_speech_buffer_inner()
@@ -732,7 +737,7 @@ class BotGUI:
                 speech_buffer.clear()
 
                 # AI名前呼びかけの検出（クールダウンをバイパス）
-                # v3.68: 「AIコメント太郎」完全一致でしか反応しなかったのを修正。
+                # v4.00: 「AIコメント太郎」完全一致でしか反応しなかったのを修正。
                 # 音声認識は「太郎」「コメント太郎」と書き起こすことが多いため、
                 # 呼び名のバリエーションすべてを文頭マッチで判定する。
                 ai_name = getattr(config, 'AI_NAME', 'AIコメント太郎')
@@ -769,7 +774,7 @@ class BotGUI:
                     return
 
                 if not can_send():
-                    # v3.68: 未定義メソッド _is_search_trigger の呼び出しを削除
+                    # v4.00: 未定義メソッド _is_search_trigger の呼び出しを削除
                     # （v3.50の検索機能削除時の残骸。クールダウン中の発言処理が
                     #   毎回AttributeErrorで静かに死んでいた）
                     logger.info(f"クールダウン中のためスキップ: {combined_text[:30]}")
@@ -929,7 +934,7 @@ class BotGUI:
             else:
                 logger.info("📡 配信情報取得なし（オフラインまたは未配信）")
 
-            logger.info("音声認識を開始します（Google Web Speech API）...")
+            logger.info("音声認識を開始します...")
             audio.start()
 
             logger.info("bot が稼働中です。停止ボタンで停止します。")
@@ -943,7 +948,7 @@ class BotGUI:
 
             def _call_gemini_lite(prompt: str) -> str:
                 """俳句・謎かけ用に生成する（通常会話と同じFlash-Liteを使用）
-                v3.68: 旧名 _call_gemini_flash から改名（Flashは使っていないため）"""
+                v4.00: 旧名 _call_gemini_flash から改名（Flashは使っていないため）"""
                 result = comment_gen._call_gemini(prompt)
                 return result or ""
 

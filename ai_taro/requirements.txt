@@ -4,8 +4,12 @@
 # Twitch IRC Bot
 twitchio==2.10.0
 
-# 音声認識（Google Web Speech API）
+# 音声キャプチャ・認識の土台
 SpeechRecognition==3.12.0
+
+# 音声認識エンジン（ローカルWhisper・課金なし）
+# GPUで使う場合はNVIDIAドライバが最新であること（CUDA 12対応）
+faster-whisper>=1.0.0
 
 # 音声キャプチャ（Windowsのマイク）
 pyaudio==0.2.14
@@ -19,6 +23,5 @@ requests==2.32.3
 # 数値計算
 numpy==1.26.4
 
-# 注意: Ollamaは不要になりました（Gemini APIを使用するため）
-# 注意: faster-whisperは不要です（VRAMを使用しません）
-# インターネット接続が必要です（Google Web Speech API + Gemini APIを使用するため）
+# 注意: v4.0からfaster-whisper（ローカル認識）が標準になりました
+# インターネット接続はGemini APIとTwitch接続に必要です

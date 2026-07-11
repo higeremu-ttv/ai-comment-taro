@@ -1,5 +1,5 @@
 """
-AIコメント太郎 v3.68 - メインコントローラー
+AIコメント太郎 v4.00 - メインコントローラー
 配信中に音声を認識し、自然な日本語コメントを自動投稿するbotです。
 音声認識: Google Web Speech API（高精度・無料）
 コメント生成: Gemini API（gemini-1.5-flash・無料枠あり）
@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 
 class TwitchAIBot:
     """
-    AIコメント太郎 v3.68のメインコントローラー。
+    AIコメント太郎 v4.00のメインコントローラー。
     各モジュールを統合し、タイミング制御を行います。
     """
 
@@ -184,9 +184,11 @@ class TwitchAIBot:
     def start(self):
         """botを起動する"""
         logger.info("=" * 60)
-        logger.info("AIコメント太郎 v3.68 を起動します")
+        logger.info("AIコメント太郎 v4.00 を起動します")
         logger.info(f"チャンネル: #{cfg.CHANNEL_NAME}")
-        logger.info(f"音声認識: Google Web Speech API（日本語）")
+        _engine = getattr(cfg, 'SPEECH_ENGINE', 'whisper')
+        _engine_label = f"faster-whisper {getattr(cfg, 'WHISPER_MODEL_SIZE', 'medium')}（ローカル）" if _engine == 'whisper' else "Google Web Speech API"
+        logger.info(f"音声認識: {_engine_label}")
         logger.info(f"コメント生成: Gemini API ({cfg.GEMINI_MODEL})")
         logger.info(f"発言フィルター: {cfg.SPEECH_MIN_LENGTH}文字以下を無視")
         logger.info(f"会話ステート: 最大{cfg.CONVERSATION_MAX_TURNS}往復 / {cfg.TOPIC_COOLDOWN_SECONDS}秒クールダウン")
@@ -215,7 +217,7 @@ class TwitchAIBot:
         else:
             logger.info("📡 配信情報取得なし（オフラインまたはAPI未設定）")
 
-        logger.info("音声認識を開始します（Google Web Speech API）...")
+        logger.info("音声認識を開始します...")
         self.audio.start()
 
         logger.info("bot が稼働中です。Ctrl+C で停止します。")

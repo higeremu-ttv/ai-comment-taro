@@ -8,12 +8,27 @@ import importlib.util
 import os
 import sys
 
-# secrets.py を明示的にパスを指定して読み込む（Python標準のsecretsモジュールと名前衝突を回避）
-_secrets_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "secrets.py")
-if not os.path.exists(_secrets_path):
+# 個人設定ファイルを読み込む
+# v4.0: ファイル名を taro_secrets.py に変更（Python標準の secrets モジュールと
+# 名前衝突し、faster-whisper等のライブラリが起動できなくなるため）
+# 旧名 secrets.py もフォールバックで読めるが、Whisperが動かないため要リネーム
+_base_dir = os.path.dirname(os.path.abspath(__file__))
+_secrets_path = os.path.join(_base_dir, "taro_secrets.py")
+_legacy_path = os.path.join(_base_dir, "secrets.py")
+
+if os.path.exists(_secrets_path):
+    pass  # 新名を使用
+elif os.path.exists(_legacy_path):
+    _secrets_path = _legacy_path
+    import warnings
+    warnings.warn(
+        "【要対応】secrets.py を taro_secrets.py にリネームしてください。"
+        "旧名のままだとPython標準ライブラリと衝突し、Whisper音声認識が起動できません。"
+    )
+else:
     raise RuntimeError(
-        "secrets.py が見つかりません。\n"
-        "secrets_sample.py をコピーして secrets.py を作成し、\n"
+        "taro_secrets.py が見つかりません。\n"
+        "secrets_sample.py をコピーして taro_secrets.py を作成し、\n"
         "APIキー・トークン等を設定してください。"
     )
 _spec = importlib.util.spec_from_file_location("_user_secrets", _secrets_path)
@@ -52,6 +67,25 @@ SPEECH_PAUSE_THRESHOLD = 2.0
 # ============================================================
 # 発言フィルター設定
 # ============================================================
+# ============================================
+# 音声認識エンジン設定（v4.0）
+# ============================================
+# "whisper": faster-whisper（ローカルGPU/CPU・課金なし・高精度）※推奨
+# "google" : Google Web Speech API（従来方式）
+# whisperの初期化に失敗した場合は自動でgoogleにフォールバックします
+SPEECH_ENGINE = "whisper"
+
+# Whisperモデルサイズ: tiny / base / small / medium / large-v3
+# RTX 4080 SUPERなら medium 推奨（VRAM約2.5GB・ゲームと同居可）
+# さらに精度が欲しければ large-v3（VRAM約5GB）
+WHISPER_MODEL_SIZE = "medium"
+
+# 使用デバイス: "auto"（CUDA→CPUの順で自動選択） / "cuda" / "cpu"
+WHISPER_DEVICE = "auto"
+
+# 認識精度を上げるための語彙ヒント（配信でよく出る固有名詞を書いておく）
+WHISPER_INITIAL_PROMPT = "Twitchのゲーム配信。太郎、コメント太郎、フォートナイト、ビクロイ、ぶり大根、しらす姐さん、ターボさん、などの言葉が出ます。"
+
 SPEECH_MIN_LENGTH = 4
 UNRECOGNIZED_THRESHOLD = 6
 INCOMPLETE_SPEECH_MERGE_ENABLED = True

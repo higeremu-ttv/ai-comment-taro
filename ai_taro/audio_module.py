@@ -1,15 +1,15 @@
 """
-音声認識モジュール v3.1
+音声認識モジュール v4.0
 
-【残した機能】
-- マイク音声キャプチャ・Google Web Speech APIでテキスト変換
+【機能】
+- マイク音声キャプチャ（speech_recognitionのエネルギーベースVAD）
+- 認識エンジン切り替え対応:
+    - "whisper": faster-whisper（ローカル・GPU/CPU・課金なし・高精度）※推奨
+    - "google" : Google Web Speech API（従来方式・無料・低精度）
 - 最小文字数フィルター（短すぎる発言を無視）
 - 途中切れ発言の結合待機
 - 無言検知
-
-【削除したもの】
-- VC向け指示語フィルター
-- 聞き取り失敗コールバック
+- Whisperハルシネーション対策（定番の幻聴フレーズを破棄）
 """
 
 import threading
@@ -39,6 +39,7 @@ class AudioModule:
         self._silence_notified = False
         self._speech_context = deque(maxlen=20)
         self._min_length = getattr(config, 'SPEECH_MIN_LENGTH', 4)
+        self._whisper_error_count = 0
 
         # 途中切れ発言の結合設定
         self._merge_enabled = getattr(config, 'INCOMPLETE_SPEECH_MERGE_ENABLED', True)
@@ -158,12 +159,137 @@ class AudioModule:
         self._config_ref = config
 
     def load_model(self):
+        """認識エンジンを初期化する。whisper指定で失敗した場合はgoogleにフォールバック"""
         try:
             import speech_recognition as sr  # noqa
-            logger.info("SpeechRecognition (Google Web Speech API) を使用します")
         except ImportError:
             logger.error("SpeechRecognitionライブラリが見つかりません。pip install SpeechRecognition")
             raise
+
+        self._engine = getattr(self.config, 'SPEECH_ENGINE', 'whisper').lower()
+        self._whisper_model = None
+
+        if self._engine == 'whisper':
+            if not self._load_whisper():
+                logger.warning("Whisperの初期化に失敗したため、Google Web Speech APIにフォールバックします")
+                self._engine = 'google'
+
+        if self._engine == 'google':
+            logger.info("認識エンジン: Google Web Speech API（クラウド・無料枠）")
+
+    def _register_cuda_dlls(self):
+        """Windows: pipでインストールされたCUDA関連DLLの場所をOSに登録する。
+        （nvidia-cublas-cu12等はsite-packages内の深い場所にDLLを置くため、
+        　そのままではctranslate2から見つけられない）"""
+        import os
+        import sys
+        if sys.platform != 'win32':
+            return
+        try:
+            import site
+            candidates = []
+            for sp in site.getsitepackages() + [site.getusersitepackages()]:
+                nvidia_dir = os.path.join(sp, 'nvidia')
+                if os.path.isdir(nvidia_dir):
+                    for pkg in os.listdir(nvidia_dir):
+                        bin_dir = os.path.join(nvidia_dir, pkg, 'bin')
+                        if os.path.isdir(bin_dir):
+                            candidates.append(bin_dir)
+            for d in candidates:
+                try:
+                    os.add_dll_directory(d)
+                    os.environ['PATH'] = d + os.pathsep + os.environ.get('PATH', '')
+                except Exception:
+                    pass
+            if candidates:
+                logger.info(f"CUDA DLLパスを登録しました: {len(candidates)}箇所")
+        except Exception as e:
+            logger.debug(f"CUDA DLLパス登録スキップ: {e}")
+
+    def _load_whisper(self) -> bool:
+        """faster-whisperモデルをロードする。成功したらTrue"""
+        try:
+            from faster_whisper import WhisperModel
+        except ImportError:
+            logger.error("faster-whisperが見つかりません。pip install faster-whisper を実行してください")
+            return False
+
+        self._register_cuda_dlls()
+
+        model_size = getattr(self.config, 'WHISPER_MODEL_SIZE', 'medium')
+        device_pref = getattr(self.config, 'WHISPER_DEVICE', 'auto')
+
+        # 試行順: 指定デバイス → CUDA(float16) → CPU(int8)
+        attempts = []
+        if device_pref == 'cuda':
+            attempts = [('cuda', 'float16')]
+        elif device_pref == 'cpu':
+            attempts = [('cpu', 'int8')]
+        else:  # auto
+            attempts = [('cuda', 'float16'), ('cpu', 'int8')]
+
+        for device, compute_type in attempts:
+            try:
+                logger.info(f"Whisperモデルをロード中: {model_size} / {device} / {compute_type}")
+                logger.info("（初回はモデルのダウンロードが走るため数分かかることがあります）")
+                self._whisper_model = WhisperModel(
+                    model_size, device=device, compute_type=compute_type
+                )
+                logger.info(f"認識エンジン: faster-whisper {model_size}（{device.upper()}・ローカル・課金なし）")
+                return True
+            except Exception as e:
+                logger.warning(f"Whisperロード失敗 ({device}/{compute_type}): {e}")
+
+        return False
+
+    # Whisperが無音から生成しがちな定番ハルシネーション（完全一致で破棄）
+    WHISPER_HALLUCINATIONS = [
+        "ご視聴ありがとうございました",
+        "ご視聴ありがとうございました。",
+        "チャンネル登録お願いします",
+        "チャンネル登録お願いします。",
+        "おやすみなさい",
+        "ありがとうございました",
+        "ありがとうございました。",
+        "字幕視聴ありがとうございました",
+        "最後までご視聴いただきありがとうございます",
+    ]
+
+    def _recognize_whisper(self, audio) -> str:
+        """faster-whisperでAudioDataをテキスト化する"""
+        import numpy as np
+
+        raw = audio.get_raw_data(convert_rate=16000, convert_width=2)
+        samples = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
+
+        initial_prompt = getattr(
+            self.config, 'WHISPER_INITIAL_PROMPT',
+            "Twitchのゲーム配信。太郎、コメント太郎、フォートナイト、ビクロイ、などの言葉が出ます。"
+        )
+
+        segments, info = self._whisper_model.transcribe(
+            samples,
+            language="ja",
+            beam_size=5,
+            vad_filter=True,
+            without_timestamps=True,
+            initial_prompt=initial_prompt,
+            condition_on_previous_text=False,  # ハルシネーション連鎖防止
+        )
+
+        texts = []
+        for seg in segments:
+            t = seg.text.strip()
+            # 幻聴らしきセグメントを破棄（無音時に高頻度で出る定型文）
+            if seg.no_speech_prob > 0.85:
+                continue
+            if t in self.WHISPER_HALLUCINATIONS:
+                logger.debug(f"[幻聴フィルター] 破棄: '{t}'")
+                continue
+            if t:
+                texts.append(t)
+
+        return "".join(texts).strip()
 
     def _find_microphone(self, sr):
         mic_list = sr.Microphone.list_microphone_names()
@@ -229,7 +355,15 @@ class AudioModule:
                 self._silence_notified = False
 
                 try:
-                    text = recognizer.recognize_google(audio, language="ja-JP")
+                    if self._engine == 'whisper':
+                        text = self._recognize_whisper(audio)
+                        self._whisper_error_count = 0  # 成功したらリセット
+                        if not text:
+                            logger.debug("音声認識できませんでした（無音または雑音）")
+                            continue
+                    else:
+                        text = recognizer.recognize_google(audio, language="ja-JP")
+
                     if text:
                         text = text.strip()
                         if len(text) < self._min_length:
@@ -242,6 +376,17 @@ class AudioModule:
                 except sr.RequestError as e:
                     logger.error(f"Google Speech APIエラー: {e}")
                     time.sleep(5)
+                except Exception as e:
+                    logger.error(f"音声認識エラー: {e}")
+                    if self._engine == 'whisper':
+                        self._whisper_error_count += 1
+                        if self._whisper_error_count >= 3:
+                            logger.warning(
+                                "Whisperエラーが3回連続したため、Google Web Speech APIに切り替えます。"
+                                "（GPU関連の場合は config.py の WHISPER_DEVICE = \"cpu\" もお試しください）"
+                            )
+                            self._engine = 'google'
+                    time.sleep(2)
 
             except Exception as e:
                 if self.is_running:
@@ -266,7 +411,8 @@ class AudioModule:
         self.is_running = True
         self._thread = threading.Thread(target=self._audio_capture_loop, daemon=True)
         self._thread.start()
-        logger.info("音声認識モジュールを起動しました（Google Web Speech API）")
+        engine_name = "faster-whisper（ローカル）" if self._engine == 'whisper' else "Google Web Speech API"
+        logger.info(f"音声認識モジュールを起動しました（{engine_name}）")
 
     def stop(self):
         self.is_running = False
