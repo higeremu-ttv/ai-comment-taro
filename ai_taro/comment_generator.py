@@ -338,8 +338,32 @@ class CommentGenerator:
         if len(self._conversation_history) > 20:
             self._conversation_history.pop(0)
 
+    @staticmethod
+    def _char_bigrams(text: str) -> set:
+        """文字2グラムの集合を返す（類似判定用・v4.11）"""
+        s = re.sub(r'[\s　]+', '', text)
+        return {s[i:i + 2] for i in range(len(s) - 1)}
+
+    def _is_similar(self, a: str, b: str, threshold: float = 0.45) -> bool:
+        """2つの文が「ほぼ同じ」かを判定する（v4.11）。
+        v4.10までは完全一致のみで、スペース1個違いの繰り返しが
+        すり抜けていた（実戦ログで確認）。文字2グラムの重なり率で判定する。
+        しきい値0.45は実戦ログの繰り返しペア（0.51〜1.00）と
+        正常な別コメント（0.31以下）の間を取って校正した値。
+        """
+        ga, gb = self._char_bigrams(a), self._char_bigrams(b)
+        if not ga or not gb:
+            return False
+        overlap = len(ga & gb) / min(len(ga), len(gb))
+        return overlap >= threshold
+
     def _is_duplicate(self, comment: str) -> bool:
-        return comment in self._last_comments
+        """直近のコメントと同じ・またはほぼ同じ文面かを判定する（v4.11強化）"""
+        for prev in self._last_comments[-10:]:
+            if comment == prev or self._is_similar(comment, prev):
+                logger.info(f"[重複検出] 直近のコメントと類似のため破棄: '{comment[:30]}'")
+                return True
+        return False
 
     def _contains_ng_word(self, text: str) -> bool:
         """NGワードが含まれているかチェックする"""
@@ -561,6 +585,11 @@ class CommentGenerator:
 
 ※音声認識のため誤変換や途切れがある場合があります。文脈から意図を推測してください。
 ※発言の全部に触れる必要はありません。一番面白い・気になる部分をひとつ拾って反応してください。
+※【最重要】上の「ここ最近の発言」を最優先で拾うこと。会話の流れはあくまで背景。
+　話題が変わっていたら、前の話題を引きずらずに切り替えること。
+※あなた（視聴者）が前に書いたコメントと同じ内容・似た言い回しの繰り返しは絶対禁止。
+　毎回まったく新しい切り口で書くこと。
+※明らかに誤変換と思われる意味不明な単語は、無理にネタにせず、意味の通る部分に反応すること。
 
 {style_hint}
 自然な日本語で1〜2文で返答してください。

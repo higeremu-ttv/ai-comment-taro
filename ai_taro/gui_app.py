@@ -31,7 +31,7 @@ class QueueHandler(logging.Handler):
 class BotGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("AIコメント太郎 v4.10")
+        self.root.title("AIコメント太郎 v4.11")
         self.root.geometry("820x660")
         self.root.resizable(True, True)
         self.root.configure(bg="#1a1a2e")
@@ -126,7 +126,7 @@ class BotGUI:
         header = tk.Frame(self.root, bg=self.colors["bg"], pady=10)
         header.pack(fill="x", padx=16)
 
-        tk.Label(header, text="🎮  AIコメント太郎  v4.10",
+        tk.Label(header, text="🎮  AIコメント太郎  v4.11",
                  bg=self.colors["bg"], fg=self.colors["text"],
                  font=("Yu Gothic UI", 16, "bold")).pack(side="left")
 
@@ -682,7 +682,7 @@ class BotGUI:
 
             logger = logging.getLogger("gui_bot")
             logger.info("=" * 50)
-            logger.info("AIコメント太郎 v4.10 を起動します")
+            logger.info("AIコメント太郎 v4.11 を起動します")
             logger.info(f"チャンネル: #{config.CHANNEL_NAME}")
             _engine = getattr(config, 'SPEECH_ENGINE', 'whisper')
             _engine_label = f"faster-whisper {getattr(config, 'WHISPER_MODEL_SIZE', 'medium')}（ローカル）" if _engine == 'whisper' else "Google Web Speech API"

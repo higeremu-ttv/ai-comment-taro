@@ -52,12 +52,14 @@ class LaneManager:
         self._context_memo = []  # [{'text': str, 'time': float}]
         self._memo_lock = threading.Lock()
         self._next_context_attempt = 0.0  # 生成失敗時のリトライ待ち
+        self._context_fail_count = 0      # 同じ材料での連続失敗回数（v4.11）
 
         # ちょっかい管理
         self._last_chokkai_time = 0.0
 
-        # ボット通知への反応管理（5分に1回）
+        # ボット通知への反応管理（v4.11: 同じ内容には配信中1回だけ反応）
         self._last_bot_reaction_time = 0.0
+        self._seen_bot_notifications = set()
 
     # ============================================================
     # 共通部品
@@ -126,6 +128,7 @@ class LaneManager:
     def _memo_append(self, text: str):
         """発言を文脈メモに追記する。上限を超えたら古いものから消す。"""
         max_chars = getattr(self.config, 'MAX_SPEECH_CONTEXT_CHARS', 500)
+        self._context_fail_count = 0  # 新しい材料が来たら失敗カウントをリセット（v4.11）
         with self._memo_lock:
             self._context_memo.append({'text': text, 'time': time.time()})
             # 合計文字数が上限を超えたら古い発言から捨てる
@@ -190,15 +193,27 @@ class LaneManager:
         """
         now = time.time()
 
-        # --- ボット通知（nightbot等のお知らせ）: 5分に1回だけ反応 ---
+        # --- ボット通知（nightbot等のお知らせ） ---
+        # v4.11: 同じ内容の定期お知らせには配信中1回だけ反応する。
+        # （実戦で5分ごとに同じ宣伝へ律儀に相槌を打っていたため。
+        # 　通知の種類ごとに1回は反応するので「全く無反応」にはならない）
         if is_bot:
+            import re as _re
+            content_key = _re.sub(r'[\s　]+', '', content)[:80]
+            if content_key in self._seen_bot_notifications:
+                logger.debug(f"[ボット通知] 既に反応済みの内容のためスキップ: {content[:30]}")
+                return
             if now - self._last_bot_reaction_time < 300:
+                return
+            # 太郎の直前コメントから15秒は空ける（連投見え防止・v4.11）
+            if now - self._last_comment_time < 15:
                 return
             prompt = (f"Twitchのボット通知：「{content}」。"
                       f"これを読んで視聴者として一言コメントしてください。日本語1文のみ。")
             comment = self.comment_gen._call_gemini(prompt)
             if comment:
                 self._last_bot_reaction_time = now
+                self._seen_bot_notifications.add(content_key)
                 logger.info(f"[ボット通知反応] {username}: {content} → {comment}")
                 self._send_normal(comment)
             return
@@ -311,6 +326,18 @@ class LaneManager:
             self._next_context_attempt = now + 5
             return
 
+        # 条件5: 材料が薄すぎるときは見送って貯まるのを待つ（v4.11）
+        # 「おはようございます。」1件だけ等の薄い材料だとGeminiが会話履歴に
+        # 引っ張られて前のコメントを繰り返しがち（実戦ログで確認）。
+        # ただし待ちすぎ防止のため、一定時間経ったら薄くても生成する。
+        min_chars = getattr(self.config, 'CONTEXT_MIN_CHARS', 12)
+        force_after = getattr(self.config, 'CONTEXT_FORCE_AFTER_SECONDS', 120)
+        with self._memo_lock:
+            total_chars = sum(len(e['text']) for e in self._context_memo)
+            oldest_time = self._context_memo[0]['time'] if self._context_memo else now
+        if total_chars < min_chars and (now - oldest_time) < force_after:
+            return
+
         # 全条件クリア → メモをまとめて1コメント生成
         digest = self._memo_take_all()
         if not digest:
@@ -319,12 +346,21 @@ class LaneManager:
         logger.info(f"[文脈レーン] 切れ目を検知。まとめて処理:\n{digest}")
         comment = self.comment_gen.generate_context_comment(digest)
         if comment:
+            self._context_fail_count = 0
             logger.info(f"コメント送信(文脈): {comment}")
             self._send_normal(comment)
         else:
-            # 生成失敗（Gemini不調・重複など）→ メモに戻して30秒後に再挑戦
-            logger.info("[文脈レーン] 生成失敗。30秒後に再挑戦します")
-            with self._memo_lock:
-                self._context_memo.insert(0, {'text': digest.replace('・', ' ').replace('\n', ' ').strip(),
-                                              'time': now})
-            self._next_context_attempt = now + 30
+            # 生成失敗（Gemini不調・重複など）
+            self._context_fail_count += 1
+            max_retry = getattr(self.config, 'CONTEXT_MAX_RETRY', 2)
+            if self._context_fail_count >= max_retry:
+                # v4.11: 同じ材料で失敗が続いたら潔く見送る（無限再挑戦による
+                # API無駄撃ち防止。実戦で同じ独り言に6連敗した事例あり）
+                logger.info(f"[文脈レーン] {self._context_fail_count}回失敗したため、この材料は見送ります")
+                self._context_fail_count = 0
+            else:
+                logger.info("[文脈レーン] 生成失敗。30秒後に再挑戦します")
+                with self._memo_lock:
+                    self._context_memo.insert(0, {'text': digest.replace('・', ' ').replace('\n', ' ').strip(),
+                                                  'time': now})
+                self._next_context_attempt = now + 30
