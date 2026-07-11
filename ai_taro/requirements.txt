@@ -10,14 +10,8 @@ SpeechRecognition==3.12.0
 # 音声キャプチャ（Windowsのマイク）
 pyaudio==0.2.14
 
-# Gemini API（コメント生成・画面認識）
+# Gemini API（コメント生成）
 google-generativeai>=0.8.0
-
-# スクリーンショット取得（ゲーム画面認識用）
-mss>=9.0.0
-
-# 画像処理（スクリーンショットのリサイズ）
-Pillow>=10.0.0
 
 # HTTP通信
 requests==2.32.3

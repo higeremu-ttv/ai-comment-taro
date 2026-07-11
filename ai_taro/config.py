@@ -31,7 +31,6 @@ GEMINI_API_KEY = _get("GEMINI_API_KEY", "")
 AI_NAME = _get("AI_NAME", "AIコメント太郎")
 VIEWER_COMMAND_PREFIX = _get("VIEWER_COMMAND_PREFIX", "!AIコメント太郎")
 MICROPHONE_INDEX = 1
-SCREEN_MONITOR_INDEX = _get("SCREEN_MONITOR_INDEX", 1)
 EXCLUDED_ACCOUNTS = _get("EXCLUDED_ACCOUNTS", "moobot,fossabot")
 STREAMER_NAME = _get("STREAMER_NAME", "")
 STREAMER_TOKEN = _get("STREAMER_TOKEN", "")
@@ -79,8 +78,6 @@ MAX_SPEECH_CONTEXT_CHARS = 500
 # ============================================================
 # ゲーム画面認識設定
 # ============================================================
-SCREEN_RECOGNITION_ENABLED = False  # v3.25: デフォルト無効化（画面認識の精度問題のため）
-SCREEN_CAPTURE_INTERVAL = 300
 
 # ============================================================
 # 他の視聴者コメント監視設定
@@ -142,7 +139,3 @@ VIEWER_COMMENT_REACTION_COOLDOWN = 120
 # 反応するボットアカウント（お知らせ系）カンマ区切り
 REACTION_BOT_ACCOUNTS = "nightbot,streamelements,frostytools"
 
-# 画面認識の過疎時トリガー設定
-SCREEN_SPARSE_SILENCE = 180   # 音声認識なし○秒以上
-SCREEN_SPARSE_CHAT = 180      # チャットなし○秒以上
-SCREEN_SPARSE_COMMENT = 120   # コメント太郎の発言から○秒以上

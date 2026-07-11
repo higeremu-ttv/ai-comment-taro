@@ -1,5 +1,5 @@
 """
-AIコメント太郎 v3.67 - メインコントローラー
+AIコメント太郎 v3.68 - メインコントローラー
 配信中に音声を認識し、自然な日本語コメントを自動投稿するbotです。
 音声認識: Google Web Speech API（高精度・無料）
 コメント生成: Gemini API（gemini-1.5-flash・無料枠あり）
@@ -17,7 +17,6 @@ import config as cfg
 from audio_module import AudioModule
 from comment_generator import CommentGenerator, CommentTrigger
 from twitch_module import TwitchModule
-from screen_module import ScreenModule
 
 
 def setup_logging():
@@ -42,7 +41,7 @@ logger = logging.getLogger(__name__)
 
 class TwitchAIBot:
     """
-    AIコメント太郎 v3.67のメインコントローラー。
+    AIコメント太郎 v3.68のメインコントローラー。
     各モジュールを統合し、タイミング制御を行います。
     """
 
@@ -50,14 +49,8 @@ class TwitchAIBot:
         self.audio = AudioModule(cfg)
         self.generator = CommentGenerator(cfg)
         self.twitch = TwitchModule(cfg)
-        self.screen = ScreenModule(cfg)
-
-        # 排他制御のため screen_module に comment_generator の参照をセット
-        self.screen.comment_generator = self.generator
 
         # 過疎時トリガー用の参照をセット
-        self.screen.audio_module = self.audio
-        self.screen.twitch_module = self.twitch
 
         # 音声認識の前段階フィルター用にconfigをセット
         self.audio.set_config(cfg)
@@ -81,18 +74,6 @@ class TwitchAIBot:
                 logger.info(f"[{trigger_type}反応] {username}: {content} → {comment}")
 
         self.twitch.set_viewer_comment_callback(_on_viewer_comment)
-
-        # 画面認識結果が更新されたときにコメントを生成するコールバックをセット
-        def _on_screen_updated(description: str):
-            if not self._can_send_comment():
-                return
-            comment = self.generator.generate(
-                CommentTrigger.SCREEN_EVENT,
-                screen_situation=description
-            )
-            if comment:
-                self._send_comment(comment)
-        self.screen.on_description_updated = _on_screen_updated
 
         self._is_running = False
         self._last_comment_time = 0.0
@@ -138,14 +119,10 @@ class TwitchAIBot:
             logger.debug("クールダウン中のためコメントをスキップ")
             return
 
-        # 画面状況を取得
-        screen_situation = self.screen.get_latest_description()
-
         # コメント生成
         comment = self.generator.generate(
             CommentTrigger.SPEECH_RESPONSE,
-            speech_text=speech_text,
-            screen_situation=screen_situation
+            speech_text=speech_text
         )
 
         if comment:
@@ -162,8 +139,7 @@ class TwitchAIBot:
             if not self._can_send_comment():
                 return
             comment = self.generator.generate(
-                CommentTrigger.UNRECOGNIZED_SPEECH,
-                screen_situation=""
+                CommentTrigger.UNRECOGNIZED_SPEECH
             )
             if comment:
                 self._send_comment(comment)
@@ -177,11 +153,9 @@ class TwitchAIBot:
             return
 
         silence_seconds = self.audio.get_seconds_since_last_speech()
-        screen_situation = self.screen.get_latest_description()
 
         comment = self.generator.generate(
             CommentTrigger.SILENCE_BREAKER,
-            screen_situation=screen_situation,
             silence_seconds=silence_seconds
         )
 
@@ -210,14 +184,12 @@ class TwitchAIBot:
     def start(self):
         """botを起動する"""
         logger.info("=" * 60)
-        logger.info("AIコメント太郎 v3.67 を起動します")
+        logger.info("AIコメント太郎 v3.68 を起動します")
         logger.info(f"チャンネル: #{cfg.CHANNEL_NAME}")
         logger.info(f"音声認識: Google Web Speech API（日本語）")
         logger.info(f"コメント生成: Gemini API ({cfg.GEMINI_MODEL})")
         logger.info(f"発言フィルター: {cfg.SPEECH_MIN_LENGTH}文字以下を無視")
         logger.info(f"会話ステート: 最大{cfg.CONVERSATION_MAX_TURNS}往復 / {cfg.TOPIC_COOLDOWN_SECONDS}秒クールダウン")
-        screen_status = "有効" if cfg.SCREEN_RECOGNITION_ENABLED else "無効"
-        logger.info(f"画面認識: {screen_status}")
         logger.info("=" * 60)
 
         self._is_running = True
@@ -237,15 +209,11 @@ class TwitchAIBot:
         if stream_info:
             self.generator.set_stream_info(stream_info)
             if stream_info.get('game_name'):
-                self.screen._stream_game_name = stream_info['game_name']
                 logger.info(f"📡 配信情報取得成功 - ゲーム: {stream_info['game_name']}")
             if stream_info.get('title'):
                 logger.info(f"📡 配信タイトル: {stream_info['title']}")
         else:
             logger.info("📡 配信情報取得なし（オフラインまたはAPI未設定）")
-
-        logger.info("ゲーム画面認識を開始します...")
-        self.screen.start()
 
         logger.info("音声認識を開始します（Google Web Speech API）...")
         self.audio.start()
@@ -261,7 +229,6 @@ class TwitchAIBot:
             self._speech_timer.cancel()
 
         self.audio.stop()
-        self.screen.stop()
         self.twitch.stop()
 
         logger.info("bot を停止しました。")

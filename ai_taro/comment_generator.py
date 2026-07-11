@@ -30,7 +30,6 @@ logger = logging.getLogger(__name__)
 class CommentTrigger(Enum):
     SPEECH_RESPONSE = "speech_response"
     SILENCE_BREAKER = "silence_breaker"
-    SCREEN_EVENT = "screen_event"
     DIRECT_CONVERSATION = "direct_conversation"
     VIEWER_COMMAND = "viewer_command"
     UNRECOGNIZED_SPEECH = "unrecognized_speech"
@@ -216,7 +215,7 @@ class CommentGenerator:
         self._conversation_state = ConversationState.IDLE
         self._current_topic_turns = 0
         self._topic_end_time = 0.0
-        logger.info("[検索優先] 会話ステートをリセットしました")
+        logger.info("会話ステートをリセットしました")
 
     def set_stream_info(self, info: dict):
         """Twitchから取得した配信情報をセットする"""
@@ -419,8 +418,8 @@ class CommentGenerator:
                 self._conversation_state = ConversationState.LANDING
 
     def generate(self, trigger: CommentTrigger, speech_text: str = "",
-                 screen_situation: str = "", silence_seconds: float = 0,
-                 username: str = "") -> Optional[str]:
+                 silence_seconds: float = 0,
+                 username: str = "", **_ignored) -> Optional[str]:
 
         # AI名前呼びかけ・視聴者コマンドはクールダウンをバイパス
         if trigger == CommentTrigger.DIRECT_CONVERSATION:
@@ -445,16 +444,14 @@ class CommentGenerator:
             return None
 
         if trigger == CommentTrigger.SPEECH_RESPONSE:
-            return self._generate_speech_response(speech_text, screen_situation)
+            return self._generate_speech_response(speech_text)
         elif trigger == CommentTrigger.SILENCE_BREAKER:
-            return self._generate_silence_breaker(screen_situation, silence_seconds)
-        elif trigger == CommentTrigger.SCREEN_EVENT:
-            return self._generate_screen_reaction(screen_situation)
+            return self._generate_silence_breaker(silence_seconds)
         elif trigger == CommentTrigger.UNRECOGNIZED_SPEECH:
             return None  # 聞き取り失敗コメントは出さない
         return None
 
-    def _generate_speech_response(self, speech_text: str, screen_description: str) -> Optional[str]:
+    def _generate_speech_response(self, speech_text: str) -> Optional[str]:
         # 音声認識結果にNGワードが含まれていたらGeminiに送らずスキップ
         if self._contains_ng_word(speech_text):
             logger.warning(f"[入力NGワード] 音声認識結果にポリシー違反の可能性があるためスキップ")
@@ -487,9 +484,6 @@ class CommentGenerator:
 
         history_text = self._build_history_text()
 
-        screen_context = ""
-        if screen_description and "ゲーム画面が表示されていません" not in screen_description and "配信が始まったばかり" not in screen_description:
-            screen_context = f"\n【現在のゲーム画面】\n{screen_description}\n"
 
         # ステートに応じてプロンプトを変える
         if self._conversation_state == ConversationState.DEEPENING:
@@ -499,7 +493,7 @@ class CommentGenerator:
 
         prompt = f"""{history_text}【配信者の発言】
 「{speech_text}」
-{screen_context}
+
 ※音声認識のため誤変換や途切れがある場合があります。文脈から意図を推測して返答してください。
 
 {style_hint}
@@ -524,7 +518,7 @@ class CommentGenerator:
 【重要】必ず20文字以上の完結した文章で書くこと。"""
         return self._call_gemini(prompt)
 
-    def _generate_silence_breaker(self, screen_description: str, silence_seconds: float) -> Optional[str]:
+    def _generate_silence_breaker(self, silence_seconds: float) -> Optional[str]:
         # IDLE状態に戻す
         if self._conversation_state == ConversationState.IDLE:
             self._conversation_state = ConversationState.TOPIC_RAISED
@@ -533,9 +527,6 @@ class CommentGenerator:
 
         history_text = self._build_history_text()
 
-        screen_context = ""
-        if screen_description and "ゲーム画面が表示されていません" not in screen_description and "配信が始まったばかり" not in screen_description:
-            screen_context = f"\n【現在のゲーム画面】\n{screen_description}\n"
 
         # ヒアリング質問（10分に1回・沈黙180秒以上のとき）
         now = time.time()
@@ -562,13 +553,13 @@ class CommentGenerator:
 
         if last_streamer_speech and silence_seconds < 180:
             prompt = f"""{history_text}配信者がしばらく無言です。
-直前に「{last_streamer_speech}」と言っていました。{screen_context}
+直前に「{last_streamer_speech}」と言っていました。
 この発言についてさらに深掘りする質問か、関連した話題を振るコメントを1文で書いてください。
 必ず文章を最後まで書き切ること。"""
         else:
             topic = self.SILENCE_PROMPTS[self._silence_prompt_index % len(self.SILENCE_PROMPTS)]
             self._silence_prompt_index += 1
-            prompt = f"""{history_text}配信者が{int(silence_seconds)}秒間無言です。{screen_context}
+            prompt = f"""{history_text}配信者が{int(silence_seconds)}秒間無言です。
 視聴者として話しかけるコメントを1文で書いてください。
 テーマのヒント：「{topic}」
 必ず文章を最後まで書き切ること。"""
@@ -577,23 +568,6 @@ class CommentGenerator:
         if comment and not self._is_duplicate(comment):
             self._record_comment(comment)
             logger.info(f"[無言打破] {comment}")
-            return comment
-        return None
-
-    def _generate_screen_reaction(self, screen_description: str) -> Optional[str]:
-        if not screen_description or "ゲーム画面が表示されていません" in screen_description:
-            return None
-
-        prompt = f"""ゲーム配信でこんな状況が起きています：
-{screen_description}
-
-この状況を見た視聴者として、自然な日本語コメントを1文で書いてください。
-必ず文章を最後まで書き切ること。"""
-
-        comment = self._call_gemini(prompt)
-        if comment and not self._is_duplicate(comment):
-            self._record_comment(comment)
-            logger.info(f"[画面反応] {comment}")
             return comment
         return None
 
@@ -657,11 +631,8 @@ class CommentGenerator:
         return any(p in speech_text for p in patterns)
 
     # 後方互換性
-    def generate_speech_response(self, speech_text: str, screen_description: str) -> Optional[str]:
-        return self._generate_speech_response(speech_text, screen_description)
+    def generate_speech_response(self, speech_text: str) -> Optional[str]:
+        return self._generate_speech_response(speech_text)
 
-    def generate_silence_breaker(self, screen_description: str, silence_seconds: float) -> Optional[str]:
-        return self._generate_silence_breaker(screen_description, silence_seconds)
-
-    def generate_screen_reaction(self, screen_description: str, previous_description: str = "") -> Optional[str]:
-        return self._generate_screen_reaction(screen_description)
+    def generate_silence_breaker(self, silence_seconds: float) -> Optional[str]:
+        return self._generate_silence_breaker(silence_seconds)

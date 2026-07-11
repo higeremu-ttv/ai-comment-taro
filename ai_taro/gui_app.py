@@ -1,5 +1,5 @@
 """
-AIコメント太郎 - GUI管理アプリ v3.67
+AIコメント太郎 - GUI管理アプリ v3.68
 tkinterを使ったデスクトップGUIアプリです。
 このファイルを実行するとGUIが起動します: python gui_app.py
 """
@@ -26,7 +26,7 @@ class QueueHandler(logging.Handler):
 class BotGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("AIコメント太郎 v3.67")
+        self.root.title("AIコメント太郎 v3.68")
         self.root.geometry("820x660")
         self.root.resizable(True, True)
         self.root.configure(bg="#1a1a2e")
@@ -121,7 +121,7 @@ class BotGUI:
         header = tk.Frame(self.root, bg=self.colors["bg"], pady=10)
         header.pack(fill="x", padx=16)
 
-        tk.Label(header, text="🎮  AIコメント太郎  v3.67",
+        tk.Label(header, text="🎮  AIコメント太郎  v3.68",
                  bg=self.colors["bg"], fg=self.colors["text"],
                  font=("Yu Gothic UI", 16, "bold")).pack(side="left")
 
@@ -192,17 +192,6 @@ class BotGUI:
             command=self.clear_log
         )
         clear_btn.pack(side="left", padx=(0, 8))
-
-        # 画面テストボタン
-        screen_test_btn = tk.Button(
-            btn_frame, text="📷  画面テスト",
-            bg=self.colors["success"], fg="white",
-            font=("Yu Gothic UI", 10, "bold"),
-            relief="flat", bd=0, padx=16, pady=8,
-            cursor="hand2",
-            command=self.test_screen_capture
-        )
-        screen_test_btn.pack(side="left")
 
         # 会話ステート表示
         state_frame = tk.Frame(parent, bg=self.colors["panel"], pady=4)
@@ -319,9 +308,6 @@ class BotGUI:
         self.var_silence_comment = tk.StringVar()
         self.var_max_turns = tk.StringVar()
         self.var_topic_cooldown = tk.StringVar()
-        self.var_screen_enabled = tk.BooleanVar()
-        self.var_screen_interval = tk.StringVar()
-        self.var_monitor_index = tk.StringVar()
         self.var_retry_count = tk.StringVar()
         self.var_retry_interval = tk.StringVar()
         self.var_chat_mute_enabled = tk.BooleanVar()
@@ -507,9 +493,6 @@ class BotGUI:
             self.var_silence_comment.set(str(getattr(cfg, "SILENCE_COMMENT_THRESHOLD", "120")))
             self.var_max_turns.set(str(getattr(cfg, "CONVERSATION_MAX_TURNS", "3")))
             self.var_topic_cooldown.set(str(getattr(cfg, "TOPIC_COOLDOWN_SECONDS", "60")))
-            self.var_screen_enabled.set(getattr(cfg, "SCREEN_RECOGNITION_ENABLED", True))
-            self.var_screen_interval.set(str(getattr(cfg, "SCREEN_CAPTURE_INTERVAL", "300")))
-            self.var_monitor_index.set(str(getattr(cfg, "SCREEN_MONITOR_INDEX", "1")))
             self.var_retry_count.set(str(getattr(cfg, "COMMENT_RETRY_COUNT", "2")))
             self.var_retry_interval.set(str(getattr(cfg, "COMMENT_RETRY_INTERVAL", "5")))
             self.var_chat_mute_enabled.set(getattr(cfg, "CHAT_ACTIVITY_MUTE_ENABLED", True))
@@ -560,10 +543,6 @@ class BotGUI:
                                     self.var_max_turns.get(), is_string=False)
             content = replace_value(content, "TOPIC_COOLDOWN_SECONDS",
                                     self.var_topic_cooldown.get(), is_string=False)
-            content = replace_value(content, "SCREEN_RECOGNITION_ENABLED",
-                                    str(self.var_screen_enabled.get()), is_string=False)
-            content = replace_value(content, "SCREEN_CAPTURE_INTERVAL",
-                                    self.var_screen_interval.get(), is_string=False)
             content = replace_value(content, "COMMENT_RETRY_COUNT",
                                     self.var_retry_count.get(), is_string=False)
             content = replace_value(content, "COMMENT_RETRY_INTERVAL",
@@ -623,8 +602,6 @@ class BotGUI:
                 secrets_content = replace_value(secrets_content, "STREAMER_NAME", self.var_streamer_name.get())
                 secrets_content = replace_value(secrets_content, "VIEWER_COMMAND_PREFIX", self.var_viewer_command_prefix.get())
                 secrets_content = replace_value(secrets_content, "EXCLUDED_ACCOUNTS", self.var_excluded_accounts.get())
-                secrets_content = replace_value(secrets_content, "SCREEN_MONITOR_INDEX",
-                                                self.var_monitor_index.get(), is_string=False)
 
                 with open(secrets_path, "w", encoding="utf-8") as f:
                     f.write(secrets_content)
@@ -667,7 +644,7 @@ class BotGUI:
         try:
             # モジュールを再読み込みして最新の設定を反映
             for mod_name in ["config", "audio_module",
-                             "comment_generator", "twitch_module", "screen_module"]:
+                             "comment_generator", "twitch_module"]:
                 if mod_name in sys.modules:
                     del sys.modules[mod_name]
 
@@ -675,7 +652,6 @@ class BotGUI:
             from audio_module import AudioModule
             from comment_generator import CommentGenerator, CommentTrigger
             from twitch_module import TwitchModule
-            from screen_module import ScreenModule
 
             # モジュール再インポート後、ルートロガーのハンドラーを再度クリーンアップしてQueueHandlerのみにする
             # （モジュールインポート時に追加ハンドラーが生じる場合の対策）
@@ -696,30 +672,21 @@ class BotGUI:
 
             logger = logging.getLogger("gui_bot")
             logger.info("=" * 50)
-            logger.info("AIコメント太郎 v3.67 を起動します")
+            logger.info("AIコメント太郎 v3.68 を起動します")
             logger.info(f"チャンネル: #{config.CHANNEL_NAME}")
             logger.info(f"音声認識: Google Web Speech API（日本語）")
             logger.info(f"コメント生成: Gemini API ({config.GEMINI_MODEL})")
             logger.info(f"発言フィルター: {config.SPEECH_MIN_LENGTH}文字以下を無視")
             logger.info(f"会話ステート: 最大{config.CONVERSATION_MAX_TURNS}往復 / {config.TOPIC_COOLDOWN_SECONDS}秒クールダウン")
-            screen_status = "有効" if config.SCREEN_RECOGNITION_ENABLED else "無効"
-            logger.info(f"画面認識: {screen_status}")
             logger.info("=" * 50)
 
             comment_gen = CommentGenerator(config)
             twitch = TwitchModule(config)
             audio = AudioModule(config)
             audio.set_config(config)  # NGワード前段階フィルター用
-            screen = ScreenModule(config)
-            # 排他制御用に comment_generator の参照をセット
-            screen.comment_generator = comment_gen
-            screen.audio_module = audio
-            screen.twitch_module = twitch
-
             self.bot_instance = {
                 "audio": audio,
                 "twitch": twitch,
-                "screen": screen,
                 "comment_gen": comment_gen,
             }
 
@@ -743,23 +710,16 @@ class BotGUI:
                         return False
                 return True
 
-            # 画面認識結果が更新されたときにコメントを生成するコールバックをセット
-            def on_screen_updated(description: str):
-                if not can_send():
-                    return
-                comment = comment_gen.generate(
-                    CommentTrigger.SCREEN_EVENT,
-                    screen_situation=description
-                )
-                if comment:
-                    logger.info(f"コメント送信: {comment}")
-                    self.log_queue.put(f"COMMENT:{comment}")
-                    twitch.send_comment(comment)
-                    last_comment_time[0] = time.time()
-            screen.on_description_updated = on_screen_updated
-
             def process_speech_buffer():
                 """バッファに溜まった発言をまとめて処理する"""
+                # v3.68: タイマースレッド内の例外はどこにも表示されず
+                # 発言が黙って消えるため、全体をtry/exceptで保護してログに残す
+                try:
+                    _process_speech_buffer_inner()
+                except Exception as e:
+                    logger.error(f"[発言処理エラー] {e}", exc_info=True)
+
+            def _process_speech_buffer_inner():
                 if not speech_buffer:
                     return
 
@@ -772,25 +732,33 @@ class BotGUI:
                 speech_buffer.clear()
 
                 # AI名前呼びかけの検出（クールダウンをバイパス）
-                ai_name = getattr(config, 'AI_NAME', '太郎')
+                # v3.68: 「AIコメント太郎」完全一致でしか反応しなかったのを修正。
+                # 音声認識は「太郎」「コメント太郎」と書き起こすことが多いため、
+                # 呼び名のバリエーションすべてを文頭マッチで判定する。
+                ai_name = getattr(config, 'AI_NAME', 'AIコメント太郎')
+                name_variants = sorted(
+                    {ai_name, 'AIコメント太郎', 'コメント太郎', '太郎'},
+                    key=len, reverse=True  # 長い名前から先に照合（「太郎」誤爆防止）
+                )
                 is_direct_call = False
                 direct_question = combined_text
-                for sep in ['、', '，', ' ', '。']:
-                    if combined_text.startswith(ai_name + sep):
-                        is_direct_call = True
-                        direct_question = combined_text[len(ai_name) + len(sep):].strip()
-                        break
-                if combined_text.startswith(ai_name) and not is_direct_call:
+                for name in name_variants:
+                    if not combined_text.startswith(name):
+                        continue
+                    rest = combined_text[len(name):]
+                    for sep in ['、', '，', ' ', '。', '！', '？']:
+                        if rest.startswith(sep):
+                            rest = rest[len(sep):]
+                            break
                     is_direct_call = True
-                    direct_question = combined_text[len(ai_name):].strip()
+                    direct_question = rest.strip()
+                    break
 
                 if is_direct_call:
                     logger.info(f"[{ai_name}呼びかけ] {direct_question}")
-                    screen_situation = screen.get_latest_description()
                     comment = comment_gen.generate(
                         CommentTrigger.DIRECT_CONVERSATION,
-                        speech_text=direct_question or combined_text,
-                        screen_situation=screen_situation
+                        speech_text=direct_question or combined_text
                     )
                     if comment:
                         logger.info(f"コメント送信: {comment}")
@@ -801,23 +769,17 @@ class BotGUI:
                     return
 
                 if not can_send():
-                    if comment_gen._is_search_trigger(combined_text):
-                        logger.info("[検索優先] クールダウン中だが検索キーワードを検出、優先処理します")
-                        comment_gen.reset_conversation_state()
-                        last_comment_time[0] = 0.0
-                    else:
-                        logger.debug("クールダウン中のためスキップ")
-                        return
+                    # v3.68: 未定義メソッド _is_search_trigger の呼び出しを削除
+                    # （v3.50の検索機能削除時の残骸。クールダウン中の発言処理が
+                    #   毎回AttributeErrorで静かに死んでいた）
+                    logger.info(f"クールダウン中のためスキップ: {combined_text[:30]}")
+                    return
 
                 logger.info(f"まとまった発言を処理: {combined_text}")
 
-                # 画面状況を取得
-                screen_situation = screen.get_latest_description()
-
                 comment = comment_gen.generate(
                     CommentTrigger.SPEECH_RESPONSE,
-                    speech_text=combined_text,
-                    screen_situation=screen_situation
+                    speech_text=combined_text
                 )
                 if comment:
                     logger.info(f"コメント送信: {comment}")
@@ -851,8 +813,7 @@ class BotGUI:
                         return
 
                     comment = comment_gen.generate(
-                        CommentTrigger.UNRECOGNIZED_SPEECH,
-                        screen_situation=""
+                        CommentTrigger.UNRECOGNIZED_SPEECH
                     )
                     if comment:
                         logger.info(f"コメント送信: {comment}")
@@ -863,10 +824,8 @@ class BotGUI:
             def on_silence():
                 if not can_send():
                     return
-                screen_situation = screen.get_latest_description()
                 comment = comment_gen.generate(
-                    CommentTrigger.SILENCE_BREAKER,
-                    screen_situation=screen_situation
+                    CommentTrigger.SILENCE_BREAKER
                 )
                 if comment:
                     logger.info(f"コメント送信: {comment}")
@@ -878,11 +837,9 @@ class BotGUI:
             # 視聴者コマンドコールバックを設定
             def on_viewer_command(command_str, username):
                 """視聴者コマンドを受け取ったときの処理"""
-                screen_situation = screen.get_latest_description()
                 comment = comment_gen.generate(
                     CommentTrigger.VIEWER_COMMAND,
                     speech_text=command_str,
-                    screen_situation=screen_situation,
                     username=username
                 )
                 if comment:
@@ -966,15 +923,11 @@ class BotGUI:
             if stream_info:
                 comment_gen.set_stream_info(stream_info)
                 if stream_info.get('game_name'):
-                    screen._stream_game_name = stream_info['game_name']
                     logger.info(f"📡 配信情報取得成功 - ゲーム: {stream_info['game_name']}")
                 if stream_info.get('title'):
                     logger.info(f"📡 配信タイトル: {stream_info['title']}")
             else:
                 logger.info("📡 配信情報取得なし（オフラインまたは未配信）")
-
-            logger.info("ゲーム画面認識を開始します...")
-            screen.start()
 
             logger.info("音声認識を開始します（Google Web Speech API）...")
             audio.start()
@@ -988,8 +941,9 @@ class BotGUI:
             used_event_words = []  # 今日の配信で使った単語リスト
             logger.info(f"[イベント] 次まで {next_event_interval // 60} 分")
 
-            def _call_gemini_flash(prompt: str) -> str:
-                """俳句・謎かけ用に生成する（Flash-Liteを使用）"""
+            def _call_gemini_lite(prompt: str) -> str:
+                """俳句・謎かけ用に生成する（通常会話と同じFlash-Liteを使用）
+                v3.68: 旧名 _call_gemini_flash から改名（Flashは使っていないため）"""
                 result = comment_gen._call_gemini(prompt)
                 return result or ""
 
@@ -1039,7 +993,7 @@ class BotGUI:
                         f"{avoid_text}"
                         f"・俳句の本文のみ出力（説明・コメント不要）"
                     )
-                haiku = _call_gemini_flash(prompt)
+                haiku = _call_gemini_lite(prompt)
                 if haiku and self.bot_running:
                     haiku = haiku.replace('\n', '　')
                     message = f"ここで一句。「{haiku}」"
@@ -1083,7 +1037,7 @@ class BotGUI:
                         f"{avoid_text}"
                         f"・謎かけ本文のみ出力（説明不要）"
                     )
-                result = _call_gemini_flash(prompt)
+                result = _call_gemini_lite(prompt)
                 if result and '／' in result and self.bot_running:
                     parts = result.strip().split('／', 1)
                     first = parts[0].strip()
@@ -1159,10 +1113,6 @@ class BotGUI:
             except Exception:
                 pass
             try:
-                self.bot_instance["screen"].stop()
-            except Exception:
-                pass
-            try:
                 self.bot_instance["twitch"].stop()
             except Exception:
                 pass
@@ -1194,57 +1144,6 @@ class BotGUI:
 
         self.bot_running = False
         self.root.after(2000, lambda: self._append_log("✓ Botを停止しました", "INFO") if not self.bot_running else None)
-
-    def test_screen_capture(self):
-        """画面キャプチャのテストを実行する"""
-        import threading
-
-        def _run_test():
-            try:
-                self._append_log("📷 画面テスト開始...", "INFO")
-
-                import sys
-                import os
-                sys.path.insert(0, os.path.dirname(__file__))
-                import config
-                from screen_module import ScreenModule
-
-                screen = ScreenModule(config)
-
-                # キャプチャ
-                image_bytes = screen._capture_screenshot()
-                if not image_bytes:
-                    self._append_log("❌ スクリーンショット取得失敗。mss・Pillowが入っているか確認してください。", "ERROR")
-                    return
-
-                self._append_log(f"✅ スクリーンショット取得成功 ({len(image_bytes)//1024}KB)", "INFO")
-                self._append_log("🔍 Gemini APIで解析中...", "INFO")
-
-                # 解析（生のレスポンスも確認するため直接呼び出し）
-                try:
-                    model = screen._get_gemini_vision_model()
-                    if model is None:
-                        self._append_log("❌ Gemini Visionモデルの初期化失敗。APIキーを確認してください。", "ERROR")
-                        return
-                    import base64
-                    import google.generativeai as genai
-                    game_title = getattr(config, 'STREAM_GAME_NAME', '') or 'ゲーム配信'
-                    prompt = f"これは{game_title}のゲーム配信画面です。画面に何が映っているか日本語で説明してください。"
-                    response = model.generate_content([
-                        prompt,
-                        {"mime_type": "image/jpeg", "data": base64.b64encode(image_bytes).decode("utf-8")}
-                    ])
-                    if response and response.text:
-                        self._append_log(f"✅ Gemini生レスポンス: {response.text[:200]}", "INFO")
-                    else:
-                        self._append_log(f"❌ Geminiレスポンス空。安全フィルターに引っかかっている可能性があります。feedback: {getattr(response, 'prompt_feedback', '不明')}", "WARNING")
-                except Exception as e:
-                    self._append_log(f"❌ Gemini呼び出しエラー: {e}", "ERROR")
-
-            except Exception as e:
-                self._append_log(f"❌ テストエラー: {e}", "ERROR")
-
-        threading.Thread(target=_run_test, daemon=True).start()
 
     def clear_log(self):
         self.log_text.config(state="normal")
