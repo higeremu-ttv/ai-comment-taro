@@ -33,6 +33,16 @@ STREAMER_TOKEN = ""
 GEMINI_API_KEY = "your_gemini_api_key_here"
 
 # ============================================================
+# 外部AI設定（v4.40・任意 / 上位オプション）
+# ============================================================
+
+# OpenAI互換APIのキー（SMART_PROVIDER="openai" にしたときだけ必要）
+# OpenAI: https://platform.openai.com/api-keys
+# OpenRouter: https://openrouter.ai/keys
+# Ollama等のローカルLLMはキー不要（空のままでOK）
+OPENAI_API_KEY = ""
+
+# ============================================================
 # AI キャラクター設定（個人設定）
 # ============================================================
 

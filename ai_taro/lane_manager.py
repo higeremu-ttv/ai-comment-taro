@@ -121,11 +121,12 @@ class LaneManager:
             if not text.startswith(name):
                 continue
             rest = text[len(name):]
-            for sep in ['、', '，', ' ', '。', '！', '？', '!', '?']:
+            # v4.41: 「太郎は〜」「太郎さ〜」「太郎ね〜」の助詞にも対応
+            for sep in ['、', '，', ' ', '。', '！', '？', '!', '?', 'は', 'さ', 'ね']:
                 if rest.startswith(sep):
                     rest = rest[len(sep):]
                     break
-            return True, rest.strip()
+            return True, rest.lstrip('、，。 ').strip()
         return False, text
 
     # ============================================================

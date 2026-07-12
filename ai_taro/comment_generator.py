@@ -225,6 +225,15 @@ class CommentGenerator:
         # モデルを再初期化してシステムプロンプトに反映
         self._gemini_models = {}
 
+    def _max_tokens_for(self, model_name: str) -> int:
+        """モデルごとの出力トークン予算を返す（v4.41）。
+        会話用モデル（2.5 Flash以上）は思考型で、答える前の「頭の中の下書き」も
+        予算を消費するため大きめに取る。相槌用Liteは従来通り小さくてよい。"""
+        lite_model = getattr(self.config, 'GEMINI_MODEL', 'gemini-2.5-flash-lite')
+        if model_name and model_name != lite_model:
+            return getattr(self.config, 'SMART_MAX_TOKENS', 2048)
+        return getattr(self.config, 'COMMENT_MAX_TOKENS', 300)
+
     def _get_gemini_model(self, model_name: str = ""):
         """指定モデルを取得する（v4.30: モデル名ごとにキャッシュ）"""
         if not model_name:
@@ -238,7 +247,7 @@ class CommentGenerator:
                 logger.error("Gemini APIキーが設定されていません。")
                 return None
             genai.configure(api_key=api_key)
-            max_tokens = getattr(self.config, 'COMMENT_MAX_TOKENS', 120)
+            max_tokens = self._max_tokens_for(model_name)  # v4.41: モデル別の予算
             self._gemini_models[model_name] = genai.GenerativeModel(
                 model_name=model_name,
                 generation_config=genai.GenerationConfig(
@@ -262,22 +271,52 @@ class CommentGenerator:
             logger.error(f"Gemini APIの初期化エラー: {e}")
             return None
 
+    def _get_external_client(self):
+        """外部AI（OpenAI互換）クライアントを取得する（v4.40）。
+        SMART_PROVIDERが"openai"以外のときはNone（＝Geminiを使う）。"""
+        if not hasattr(self, '_external_client_cached'):
+            try:
+                from llm_client import build_smart_client
+                self._external_client_cached = build_smart_client(self.config)
+                if self._external_client_cached is not None:
+                    logger.info(f"会話用に外部AIを使用します: {self._external_client_cached.model}"
+                                f"（{self._external_client_cached.base_url}）")
+            except Exception as e:
+                logger.debug(f"外部AIクライアント初期化失敗: {e}")
+                self._external_client_cached = None
+        return self._external_client_cached
+
     def _call_gemini(self, prompt: str, smart: bool = False) -> Optional[str]:
-        """Gemini APIを呼び出す。
+        """AIを呼び出す。
 
         v4.30: smart=True で会話用の上位モデル（GEMINI_MODEL_SMART）を使う。
-        上位モデルが失敗（レート制限・503等）した場合は、自動で相槌用の
-        軽量モデルに退避するので、コメントが止まることはない。
+        v4.40: SMART_PROVIDER="openai" なら会話をOpenAI互換の外部AIに出す。
+        どの経路でも失敗時は相槌用のGemini Liteに退避するので、コメントは止まらない。
         """
         lite_model = getattr(self.config, 'GEMINI_MODEL', 'gemini-2.5-flash-lite')
         smart_model = getattr(self.config, 'GEMINI_MODEL_SMART', '') or lite_model
 
-        if smart and smart_model != lite_model:
-            result = self._call_gemini_once(prompt, model_name=smart_model)
-            if result is not None:
-                return result
-            logger.warning(f"会話用モデル({smart_model})での生成に失敗。{lite_model}に退避します")
-            return self._call_gemini_once(prompt, model_name=lite_model)
+        if smart:
+            # v4.40: 外部AI（OpenAI/OpenRouter/ローカルLLM等）が設定されていれば最優先
+            external = self._get_external_client()
+            if external is not None:
+                raw = external.chat(
+                    self.get_system_prompt(), prompt,
+                    max_tokens=getattr(self.config, 'COMMENT_MAX_TOKENS', 300),
+                )
+                comment = self._postprocess_comment(raw) if raw else None
+                if comment is not None:
+                    return comment
+                logger.warning(f"外部AI({external.model})での生成に失敗。{lite_model}に退避します")
+                return self._call_gemini_once(prompt, model_name=lite_model)
+
+            # v4.30: Geminiの上位モデル
+            if smart_model != lite_model:
+                result = self._call_gemini_once(prompt, model_name=smart_model)
+                if result is not None:
+                    return result
+                logger.warning(f"会話用モデル({smart_model})での生成に失敗。{lite_model}に退避します")
+                return self._call_gemini_once(prompt, model_name=lite_model)
 
         for attempt in range(2):
             result = self._call_gemini_once(prompt, model_name=lite_model)
@@ -305,35 +344,8 @@ class CommentGenerator:
                 logger.warning("Gemini APIから空のレスポンスが返りました")
                 return None
 
-            comment = response.text.strip()
-            comment = comment.replace("\n", " ").strip()
-
-            # プロンプト漏れの最低限の除去
-            comment = re.sub(r'^（[^）]{1,30}）\s*', '', comment).strip()
-            comment = re.sub(r'^(自分|bot|視聴者bot|あなた)\s*[:：]\s*', '', comment).strip()
-
-            if not comment:
-                return None
-
-            # 日本語が1文字以上含まれているか
-            if not any('\u3040' <= c <= '\u9FFF' for c in comment):
-                logger.warning(f"日本語なしのコメントを破棄: {repr(comment)}")
-                return None
-
-            # 短すぎるコメントは破棄（10文字未満）
-            if len(comment) < 10:
-                logger.warning(f"短すぎるコメント({len(comment)}文字)を破棄: '{comment}'")
-                return None
-
-            # 生成されたコメントにNGワードが含まれていたら破棄
-            if self._contains_ng_word(comment):
-                return None
-
-            # 内部プロンプト（命令文）がそのまま漏れていたら破棄
-            if self._looks_like_prompt_leak(comment):
-                return None
-
-            return comment
+            # v4.40: 検査・整形は共通部品（外部AIと同じチェックを通す）
+            return self._postprocess_comment(response.text)
 
         except Exception as e:
             error_str = str(e)
@@ -345,6 +357,51 @@ class CommentGenerator:
             return None
         finally:
             self.is_generating = False
+
+    def _postprocess_comment(self, raw: str) -> Optional[str]:
+        """AIの生の出力を検査・整形する（v4.40で共通部品化）。
+        Geminiでも外部AIでも、同じ品質チェック（日本語・長さ・NGワード・
+        プロンプト漏れ）を通ってからコメントになる。"""
+        if not raw:
+            return None
+
+        comment = raw.strip()
+        comment = comment.replace("\n", " ").strip()
+
+        # プロンプト漏れの最低限の除去
+        comment = re.sub(r'^（[^）]{1,30}）\s*', '', comment).strip()
+        comment = re.sub(r'^(自分|bot|視聴者bot|あなた)\s*[:：]\s*', '', comment).strip()
+
+        if not comment:
+            return None
+
+        # 日本語が1文字以上含まれているか
+        if not any('぀' <= c <= '鿿' for c in comment):
+            logger.warning(f"日本語なしのコメントを破棄: {repr(comment)}")
+            return None
+
+        # 短すぎるコメントは破棄（10文字未満）
+        if len(comment) < 10:
+            logger.warning(f"短すぎるコメント({len(comment)}文字)を破棄: '{comment}'")
+            return None
+
+        # 尻切れチェック（v4.41）: 文の途中で切れた返答を破棄する
+        # 思考型モデルが予算切れで途中終了した場合の保険。破棄すれば
+        # 呼び出し側が自動でLiteに退避するので、尻切れ文が配信に出ることはない
+        valid_endings = tuple('。．！？!?…♪〜～」』）)ｗw草')
+        if not comment.endswith(valid_endings):
+            logger.warning(f"[尻切れ検出] 文が完結していないため破棄: '...{comment[-20:]}'")
+            return None
+
+        # 生成されたコメントにNGワードが含まれていたら破棄
+        if self._contains_ng_word(comment):
+            return None
+
+        # 内部プロンプト（命令文）がそのまま漏れていたら破棄
+        if self._looks_like_prompt_leak(comment):
+            return None
+
+        return comment
 
     def _record_comment(self, comment: str):
         self._last_comments.append(comment)

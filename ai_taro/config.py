@@ -38,6 +38,7 @@ _spec.loader.exec_module(_s)
 def _get(key, default=None):
     return getattr(_s, key, default)
 
+OPENAI_API_KEY = _get("OPENAI_API_KEY", "")  # v4.40: 外部AI用（任意）
 _bot_token_raw = _get("BOT_TOKEN", "")
 BOT_TOKEN = "oauth:" + _bot_token_raw.replace('oauth:', '') if _bot_token_raw else ""
 BOT_NICK = _get("BOT_NICK", "")
@@ -65,6 +66,31 @@ GEMINI_MODEL = "gemini-2.5-flash-lite"
 #   例: "gemini-3.5-flash" / "gemini-3.1-pro"（どちらも有料・APIキーの課金設定が必要）
 # 空文字にすると相槌用と同じモデルを使う（従来のv4.20相当の動き）
 GEMINI_MODEL_SMART = "gemini-2.5-flash"
+
+# 会話用モデルの出力トークン予算（v4.41）
+# 2.5 Flash以上は「考えてから話す」思考型モデルで、頭の中の下書き（思考トークン）も
+# この予算から消費する。300のままだと下書きで予算が尽きて返答が尻切れになる
+# （v4.40の実戦で発生）。思考分を見込んで大きめに取る。
+SMART_MAX_TOKENS = 2048
+
+# ============================================================
+# マルチAI対応（v4.40 / 上位オプション）
+# ============================================================
+# 会話用AIの接続先。"gemini"（標準・無料枠）または "openai"（OpenAI互換の外部AI）
+# "openai" にすると、呼びかけ・会話モード・視聴者対応・俳句が外部AIになる。
+# 相槌（文脈レーン等）は常にGemini Lite（無料）のまま。失敗時も自動でLiteに退避。
+SMART_PROVIDER = "gemini"
+
+# OpenAI互換APIの接続先URL（SMART_PROVIDER="openai" のときのみ使用）
+#   OpenAI:       https://api.openai.com/v1
+#   OpenRouter:   https://openrouter.ai/api/v1   （Claude等100種以上の窓口）
+#   Ollama(自PC): http://localhost:11434/v1      （無料・APIキー不要）
+OPENAI_BASE_URL = "https://api.openai.com/v1"
+
+# 使用するモデル名（例: gpt-4o-mini / anthropic/claude-sonnet-4.5 / llama3 等）
+OPENAI_MODEL = "gpt-4o-mini"
+
+# ※APIキーは taro_secrets.py の OPENAI_API_KEY に設定（GUIからも入力可）
 
 # ============================================================
 # 音声認識設定

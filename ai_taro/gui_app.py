@@ -31,7 +31,7 @@ class QueueHandler(logging.Handler):
 class BotGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("AIコメント太郎 v4.30")
+        self.root.title("AIコメント太郎 v4.41")
         self.root.geometry("820x660")
         self.root.resizable(True, True)
         self.root.configure(bg="#1a1a2e")
@@ -126,7 +126,7 @@ class BotGUI:
         header = tk.Frame(self.root, bg=self.colors["bg"], pady=10)
         header.pack(fill="x", padx=16)
 
-        tk.Label(header, text="🎮  AIコメント太郎  v4.30",
+        tk.Label(header, text="🎮  AIコメント太郎  v4.41",
                  bg=self.colors["bg"], fg=self.colors["text"],
                  font=("Yu Gothic UI", 16, "bold")).pack(side="left")
 
@@ -309,6 +309,10 @@ class BotGUI:
         self.var_gemini_api_key = tk.StringVar()
         self.var_gemini_model = tk.StringVar()
         self.var_gemini_model_smart = tk.StringVar()
+        self.var_smart_provider = tk.StringVar()
+        self.var_openai_base_url = tk.StringVar()
+        self.var_openai_model = tk.StringVar()
+        self.var_openai_api_key = tk.StringVar()
         self.var_speech_min_length = tk.StringVar()
         self.var_comment_cooldown = tk.StringVar()
         self.var_silence_comment = tk.StringVar()
@@ -359,9 +363,30 @@ class BotGUI:
             font=("Yu Gothic UI", 10), width=24
         )
         smart_combo.pack(side="left")
-        make_note(sec_gemini, "呼びかけ・会話モード・視聴者対応・俳句で使う賢いモデル。推奨: gemini-2.5-flash（無料）。"
-                              "gemini-3.5-flash / gemini-3.1-pro は有料（APIキーの課金設定が必要）。"
-                              "失敗時は自動で相槌用モデルに切り替わるので安心です。")
+        make_note(sec_gemini, "呼びかけ・会話モード・視聴者対応・俳句で使う賢いモデル。推奨: gemini-2.5-flash。"
+                              "gemini-3.5-flash / gemini-3.1-pro はより高性能（利用料は高め・課金設定必須）。"
+                              "生成に失敗したときだけ自動で相槌用モデルが代打で答えます（コスト切替ではなく、応答が途切れないための保険です）。")
+
+        # 外部AI設定（v4.40・上位オプション）
+        sec_ext = make_section("外部AI設定（上級者向け・任意）", color="#ff9f43")
+        provider_row = tk.Frame(sec_ext, bg=self.colors["panel"])
+        provider_row.pack(fill="x", padx=12, pady=3)
+        tk.Label(provider_row, text="会話AIの接続先", width=26, anchor="w",
+                 bg=self.colors["panel"], fg=self.colors["text"],
+                 font=("Yu Gothic UI", 10)).pack(side="left")
+        provider_combo = ttk.Combobox(
+            provider_row, textvariable=self.var_smart_provider,
+            values=["gemini", "openai"],
+            state="readonly", font=("Yu Gothic UI", 10), width=12
+        )
+        provider_combo.pack(side="left")
+        make_note(sec_ext, "gemini: 標準（無料枠）/ openai: OpenAI互換の外部AI（OpenAI・OpenRouter・ローカルLLM等）に会話を任せる")
+        make_field(sec_ext, "接続先URL", self.var_openai_base_url)
+        make_note(sec_ext, "例: https://api.openai.com/v1（OpenAI） / https://openrouter.ai/api/v1（OpenRouter） / http://localhost:11434/v1（Ollama）")
+        make_field(sec_ext, "モデル名", self.var_openai_model)
+        make_note(sec_ext, "例: gpt-4o-mini / anthropic/claude-sonnet-4.5（OpenRouter経由） / llama3（Ollama）")
+        make_field(sec_ext, "外部AIのAPIキー", self.var_openai_api_key, show="*")
+        make_note(sec_ext, "外部AIの利用料は自分のアカウント負担になります。接続に失敗した場合は自動でGeminiに戻るので配信は止まりません。")
 
         # AI キャラクター設定
         sec_ai = make_section("AI キャラクター設定", color="#00b894")
@@ -510,6 +535,10 @@ class BotGUI:
             self.var_gemini_api_key.set(getattr(cfg, "GEMINI_API_KEY", ""))
             self.var_gemini_model.set(getattr(cfg, "GEMINI_MODEL", "gemini-2.5-flash-lite"))
             self.var_gemini_model_smart.set(getattr(cfg, "GEMINI_MODEL_SMART", "gemini-2.5-flash"))
+            self.var_smart_provider.set(getattr(cfg, "SMART_PROVIDER", "gemini"))
+            self.var_openai_base_url.set(getattr(cfg, "OPENAI_BASE_URL", "https://api.openai.com/v1"))
+            self.var_openai_model.set(getattr(cfg, "OPENAI_MODEL", "gpt-4o-mini"))
+            self.var_openai_api_key.set(getattr(cfg, "OPENAI_API_KEY", ""))
             self.var_speech_min_length.set(str(getattr(cfg, "SPEECH_MIN_LENGTH", "10")))
             self.var_comment_cooldown.set(str(getattr(cfg, "COMMENT_COOLDOWN_SECONDS", "20")))
             self.var_silence_comment.set(str(getattr(cfg, "SILENCE_COMMENT_THRESHOLD", "120")))
@@ -560,6 +589,12 @@ class BotGUI:
 
             content = replace_value(content, "GEMINI_MODEL_SMART",
                                     self.var_gemini_model_smart.get())
+            content = replace_value(content, "SMART_PROVIDER",
+                                    self.var_smart_provider.get())
+            content = replace_value(content, "OPENAI_BASE_URL",
+                                    self.var_openai_base_url.get())
+            content = replace_value(content, "OPENAI_MODEL",
+                                    self.var_openai_model.get())
             content = replace_value(content, "SPEECH_MIN_LENGTH",
                                     self.var_speech_min_length.get(), is_string=False)
             content = replace_value(content, "COMMENT_COOLDOWN_SECONDS",
@@ -625,6 +660,8 @@ class BotGUI:
                 secrets_content = replace_value(secrets_content, "TWITCH_CLIENT_SECRET", self.var_twitch_client_secret.get())
                 secrets_content = replace_value(secrets_content, "CHANNEL_NAME", self.var_channel.get())
                 secrets_content = replace_value(secrets_content, "GEMINI_API_KEY", self.var_gemini_api_key.get())
+                secrets_content = ensure_key(secrets_content, "OPENAI_API_KEY", self.var_openai_api_key.get())
+                secrets_content = replace_value(secrets_content, "OPENAI_API_KEY", self.var_openai_api_key.get())
                 secrets_content = replace_value(secrets_content, "AI_NAME", self.var_ai_name.get())
                 secrets_content = replace_value(secrets_content, "STREAMER_NAME", self.var_streamer_name.get())
                 secrets_content = replace_value(secrets_content, "VIEWER_COMMAND_PREFIX", self.var_viewer_command_prefix.get())
@@ -672,7 +709,7 @@ class BotGUI:
             # モジュールを再読み込みして最新の設定を反映
             for mod_name in ["config", "audio_module",
                              "comment_generator", "twitch_module",
-                             "lane_manager", "profile_manager"]:
+                             "lane_manager", "profile_manager", "llm_client"]:
                 if mod_name in sys.modules:
                     del sys.modules[mod_name]
 
@@ -701,13 +738,16 @@ class BotGUI:
 
             logger = logging.getLogger("gui_bot")
             logger.info("=" * 50)
-            logger.info("AIコメント太郎 v4.30 を起動します（モデル二段構え・会話継続モード）")
+            logger.info("AIコメント太郎 v4.41 を起動します（尻切れ対策済み）")
             logger.info(f"チャンネル: #{config.CHANNEL_NAME}")
             _engine = getattr(config, 'SPEECH_ENGINE', 'whisper')
             _engine_label = f"faster-whisper {getattr(config, 'WHISPER_MODEL_SIZE', 'medium')}（ローカル）" if _engine == 'whisper' else "Google Web Speech API"
             logger.info(f"音声認識: {_engine_label}")
-            _smart = getattr(config, 'GEMINI_MODEL_SMART', '') or config.GEMINI_MODEL
-            logger.info(f"コメント生成: 相槌={config.GEMINI_MODEL} / 会話={_smart}")
+            if (getattr(config, 'SMART_PROVIDER', 'gemini') or 'gemini').lower() == 'openai':
+                logger.info(f"コメント生成: 相槌={config.GEMINI_MODEL} / 会話={getattr(config, 'OPENAI_MODEL', '')}（外部AI・OpenAI互換）")
+            else:
+                _smart = getattr(config, 'GEMINI_MODEL_SMART', '') or config.GEMINI_MODEL
+                logger.info(f"コメント生成: 相槌={config.GEMINI_MODEL} / 会話={_smart}")
             logger.info(f"発言フィルター: {config.SPEECH_MIN_LENGTH}文字以下を無視")
             logger.info(f"会話ステート: 最大{config.CONVERSATION_MAX_TURNS}往復 / {config.TOPIC_COOLDOWN_SECONDS}秒クールダウン")
             logger.info(f"二レーン化: 切れ目{getattr(config, 'CONTEXT_GAP_SECONDS', 7)}秒 / 最低間隔{config.COMMENT_COOLDOWN_SECONDS}秒 / ちょっかい確率{int(getattr(config, 'CHOKKAI_PROBABILITY', 0.25) * 100)}%")
