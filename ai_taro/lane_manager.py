@@ -61,6 +61,9 @@ class LaneManager:
         self._last_bot_reaction_time = 0.0
         self._seen_bot_notifications = set()
 
+        # 最近コメントした視聴者（v4.20: 手帳の視聴者ページを引くために使う）
+        self._active_viewers = {}  # {username: last_comment_time}
+
     # ============================================================
     # 共通部品
     # ============================================================
@@ -219,6 +222,7 @@ class LaneManager:
             return
 
         # --- 視聴者コメントを学習（プロフィール）＆会話履歴に記録 ---
+        self._active_viewers[username] = now  # v4.20: 手帳の視聴者ページ用
         profile_mgr = getattr(self.comment_gen, '_profile_manager', None)
         if profile_mgr:
             profile_mgr.add_viewer_comment(username, content)
@@ -271,10 +275,17 @@ class LaneManager:
             viewers = profile_mgr._profile.get('known_viewers', {})
             viewer_count = viewers.get(username, {}).get('count', 0)
 
+        # v4.20: 手帳にその人のメモがあれば添える
+        notes_text = ""
+        if profile_mgr:
+            notes = profile_mgr._profile.get('known_viewers', {}).get(username, {}).get('notes', [])
+            if notes:
+                notes_text = f"（手帳メモ: この人は {'、'.join(notes[-2:])}）"
+
         if viewer_count >= 5:
-            return (f"常連の「{username}」が「{content}」とコメントしました。"
+            return (f"常連の「{username}」が「{content}」とコメントしました。{notes_text}"
                     f"親しみを込めて視聴者として自然に1文で反応してください。日本語のみ。")
-        return (f"Twitchチャットに「{username}」が「{content}」と書きました。"
+        return (f"Twitchチャットに「{username}」が「{content}」と書きました。{notes_text}"
                 f"視聴者として自然に1文で反応してください。日本語のみ。")
 
     def on_silence(self):
@@ -344,7 +355,9 @@ class LaneManager:
             return
 
         logger.info(f"[文脈レーン] 切れ目を検知。まとめて処理:\n{digest}")
-        comment = self.comment_gen.generate_context_comment(digest)
+        # v4.20: 直近10分にコメントした視聴者の手帳ページを一緒に渡す
+        active = [u for u, t in self._active_viewers.items() if now - t < 600]
+        comment = self.comment_gen.generate_context_comment(digest, active_viewers=active)
         if comment:
             self._context_fail_count = 0
             logger.info(f"コメント送信(文脈): {comment}")

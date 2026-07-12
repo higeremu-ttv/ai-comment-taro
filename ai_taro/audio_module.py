@@ -40,6 +40,7 @@ class AudioModule:
         self._speech_context = deque(maxlen=20)
         self._min_length = getattr(config, 'SPEECH_MIN_LENGTH', 4)
         self._whisper_error_count = 0
+        self._extra_vocab = []  # v4.20: 手帳の固有名詞辞書から流れてくる追加語彙
 
         # 途中切れ発言の結合設定
         self._merge_enabled = getattr(config, 'INCOMPLETE_SPEECH_MERGE_ENABLED', True)
@@ -158,6 +159,12 @@ class AudioModule:
         """configの参照をセット（NGワードチェック用）"""
         self._config_ref = config
 
+    def set_extra_vocabulary(self, terms: list):
+        """手帳の固有名詞辞書をWhisperの認識ヒントに追加する（v4.20）"""
+        self._extra_vocab = [t for t in (terms or []) if t][:20]
+        if self._extra_vocab:
+            logger.info(f"認識ヒントに手帳の語彙を追加: {len(self._extra_vocab)}語")
+
     def load_model(self):
         """認識エンジンを初期化する。whisper指定で失敗した場合はgoogleにフォールバック"""
         try:
@@ -275,6 +282,9 @@ class AudioModule:
             self.config, 'WHISPER_INITIAL_PROMPT',
             "Twitchのゲーム配信。太郎、コメント太郎、フォートナイト、ビクロイ、などの言葉が出ます。"
         )
+        # v4.20: 手帳の固有名詞辞書をヒントに合流させる
+        if self._extra_vocab:
+            initial_prompt = f"{initial_prompt} {('、'.join(self._extra_vocab))}、なども出ます。"
 
         segments, info = self._whisper_model.transcribe(
             samples,

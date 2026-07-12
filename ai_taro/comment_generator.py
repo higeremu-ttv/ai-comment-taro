@@ -535,7 +535,20 @@ class CommentGenerator:
             return comment
         return None
 
-    def generate_context_comment(self, digest_text: str) -> Optional[str]:
+    def _get_notebook_pages(self, context_text: str, active_viewers=None) -> str:
+        """手帳2.0の「関連ページ」を取得する（v4.20）。
+        今の話題に関係する視聴者メモ・用語だけをプロンプトに貼るための部品。"""
+        if not self._profile_manager:
+            return ""
+        try:
+            pages = self._profile_manager.get_relevant_pages(context_text, active_viewers)
+            if pages:
+                return f"【手帳メモ（今の話題に関係する情報）】\n{pages}\n\n"
+        except Exception as e:
+            logger.debug(f"手帳ページ取得失敗: {e}")
+        return ""
+
+    def generate_context_comment(self, digest_text: str, active_viewers=None) -> Optional[str]:
         """文脈レーン用：貯まった発言をまとめて1コメント生成する（v4.10）。
 
         ペース管理（クールダウン）はlane_manager側が唯一の持ち主なので、
@@ -573,6 +586,7 @@ class CommentGenerator:
             return None
 
         history_text = self._build_history_text()
+        pages_text = self._get_notebook_pages(digest_text + " " + history_text, active_viewers)
 
         # ステートに応じてヒントを変える（ステート更新は成功時のみ＝リトライ安全）
         if self._conversation_state == ConversationState.DEEPENING:
@@ -580,7 +594,7 @@ class CommentGenerator:
         else:
             style_hint = "深掘り質問・共感・ツッコミ・自分の意見など自由なスタイルで返してください。"
 
-        prompt = f"""{history_text}【配信者のここ最近の発言（音声認識・古い順）】
+        prompt = f"""{pages_text}{history_text}【配信者のここ最近の発言（音声認識・古い順）】
 {digest_text}
 
 ※音声認識のため誤変換や途切れがある場合があります。文脈から意図を推測してください。
@@ -673,11 +687,12 @@ class CommentGenerator:
     def _generate_direct_conversation(self, speech_text: str) -> Optional[str]:
         ai_name = getattr(self.config, 'AI_NAME', '太郎')
         history_text = self._build_history_text()
+        pages_text = self._get_notebook_pages(speech_text + " " + history_text)
         self._conversation_history.append({"role": "streamer", "content": speech_text})
         if len(self._conversation_history) > 20:
             self._conversation_history.pop(0)
 
-        prompt = f"""{history_text}【配信者から{ai_name}への直接の呼びかけ】
+        prompt = f"""{pages_text}{history_text}【配信者から{ai_name}への直接の呼びかけ】
 「{speech_text}」
 
 配信者が直接あなた（{ai_name}）に話しかけています。

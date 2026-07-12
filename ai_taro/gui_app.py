@@ -31,7 +31,7 @@ class QueueHandler(logging.Handler):
 class BotGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("AIコメント太郎 v4.11")
+        self.root.title("AIコメント太郎 v4.20")
         self.root.geometry("820x660")
         self.root.resizable(True, True)
         self.root.configure(bg="#1a1a2e")
@@ -126,7 +126,7 @@ class BotGUI:
         header = tk.Frame(self.root, bg=self.colors["bg"], pady=10)
         header.pack(fill="x", padx=16)
 
-        tk.Label(header, text="🎮  AIコメント太郎  v4.11",
+        tk.Label(header, text="🎮  AIコメント太郎  v4.20",
                  bg=self.colors["bg"], fg=self.colors["text"],
                  font=("Yu Gothic UI", 16, "bold")).pack(side="left")
 
@@ -653,7 +653,7 @@ class BotGUI:
             # モジュールを再読み込みして最新の設定を反映
             for mod_name in ["config", "audio_module",
                              "comment_generator", "twitch_module",
-                             "lane_manager"]:
+                             "lane_manager", "profile_manager"]:
                 if mod_name in sys.modules:
                     del sys.modules[mod_name]
 
@@ -682,7 +682,7 @@ class BotGUI:
 
             logger = logging.getLogger("gui_bot")
             logger.info("=" * 50)
-            logger.info("AIコメント太郎 v4.11 を起動します")
+            logger.info("AIコメント太郎 v4.20 を起動します（手帳2.0）")
             logger.info(f"チャンネル: #{config.CHANNEL_NAME}")
             _engine = getattr(config, 'SPEECH_ENGINE', 'whisper')
             _engine_label = f"faster-whisper {getattr(config, 'WHISPER_MODEL_SIZE', 'medium')}（ローカル）" if _engine == 'whisper' else "Google Web Speech API"
@@ -697,6 +697,13 @@ class BotGUI:
             twitch = TwitchModule(config)
             audio = AudioModule(config)
             audio.set_config(config)  # NGワード前段階フィルター用
+
+            # v4.20: 手帳の固有名詞辞書をWhisperの認識ヒントに流す
+            try:
+                if comment_gen._profile_manager:
+                    audio.set_extra_vocabulary(comment_gen._profile_manager.get_whisper_terms())
+            except Exception:
+                pass
             self.bot_instance = {
                 "audio": audio,
                 "twitch": twitch,
@@ -870,6 +877,10 @@ class BotGUI:
             # イベントリスト（今後追加しやすい構造）
             event_list = [_do_haiku_event, _do_nazokake_event]
 
+            # v4.20: 手帳の途中保存タイマー（クラッシュしても学習が消えない保険）
+            autosave_interval = getattr(config, 'PROFILE_AUTOSAVE_SECONDS', 600)
+            last_autosave = [time.time()]
+
             while self.bot_running:
                 time.sleep(1)
 
@@ -878,6 +889,15 @@ class BotGUI:
                     lanes.tick()
                 except Exception as e:
                     logger.error(f"[文脈レーン] tick処理エラー: {e}", exc_info=True)
+
+                # v4.20: 手帳の途中保存
+                if time.time() - last_autosave[0] >= autosave_interval:
+                    last_autosave[0] = time.time()
+                    try:
+                        if comment_gen._profile_manager:
+                            comment_gen._profile_manager.save()
+                    except Exception:
+                        pass
 
                 # イベントタイマーチェック
                 now = time.time()
