@@ -64,6 +64,10 @@ class LaneManager:
         # 最近コメントした視聴者（v4.20: 手帳の視聴者ページを引くために使う）
         self._active_viewers = {}  # {username: last_comment_time}
 
+        # 会話継続モード（v4.30: 呼びかけ応答後しばらくは続きの発言も即応答）
+        self._conversation_until = 0.0   # この時刻まで会話モード
+        self._conversation_turns = 0     # 現在の会話の往復数
+
     # ============================================================
     # 共通部品
     # ============================================================
@@ -160,11 +164,23 @@ class LaneManager:
     def on_speech(self, text: str):
         """音声認識結果を受け取り、レーンに振り分ける"""
         is_direct, question = self._detect_direct_call(text)
+        now = time.time()
 
-        if is_direct:
-            # 【即時レーン】呼びかけ → クールダウン無視で即返答
+        # v4.30: 会話継続モード判定
+        # 呼びかけへの応答後、一定時間内の発言は「会話の続き」として即応答する
+        max_turns = getattr(self.config, 'CONVERSATION_MAX_TURNS', 3)
+        in_conversation = (not is_direct
+                           and now < self._conversation_until
+                           and self._conversation_turns < max_turns)
+
+        if is_direct or in_conversation:
+            # 【即時レーン】クールダウン無視で即返答
             ai_name = getattr(self.config, 'AI_NAME', 'AIコメント太郎')
-            logger.info(f"[{ai_name}呼びかけ] {question or text}")
+            if is_direct:
+                self._conversation_turns = 0  # 新しい会話の始まり
+                logger.info(f"[{ai_name}呼びかけ] {question or text}")
+            else:
+                logger.info(f"[会話モード] 続きの発言として応答: {text[:30]}")
             comment = self.comment_gen.generate(
                 CommentTrigger.DIRECT_CONVERSATION,
                 speech_text=question or text
@@ -172,6 +188,14 @@ class LaneManager:
             if comment:
                 logger.info(f"コメント送信(即時): {comment}")
                 self._send_priority(comment)
+                self._conversation_turns += 1
+                if self._conversation_turns >= max_turns:
+                    # キャッチボールはここまで。通常モードに戻る
+                    self._conversation_until = 0.0
+                    logger.info(f"[会話モード] {max_turns}往復で一区切り。通常モードに戻ります")
+                else:
+                    window = getattr(self.config, 'CONVERSATION_WINDOW_SECONDS', 30)
+                    self._conversation_until = time.time() + window
             return
 
         # 【文脈レーン】独り言・叫び → 捨てずにメモへ
@@ -238,7 +262,7 @@ class LaneManager:
         ai_name = getattr(self.config, 'AI_NAME', '太郎')
         if ai_name in content or 'コメント太郎' in content or '太郎' in content:
             prompt = self._build_viewer_reaction_prompt(username, content)
-            comment = self.comment_gen._call_gemini(prompt)
+            comment = self.comment_gen._call_gemini(prompt, smart=True)  # v4.30: 名指しは上位モデル
             if comment:
                 logger.info(f"[名指し反応] {username}: {content} → {comment}")
                 self._send_priority(comment)

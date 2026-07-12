@@ -31,7 +31,7 @@ class QueueHandler(logging.Handler):
 class BotGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("AIコメント太郎 v4.20")
+        self.root.title("AIコメント太郎 v4.30")
         self.root.geometry("820x660")
         self.root.resizable(True, True)
         self.root.configure(bg="#1a1a2e")
@@ -126,7 +126,7 @@ class BotGUI:
         header = tk.Frame(self.root, bg=self.colors["bg"], pady=10)
         header.pack(fill="x", padx=16)
 
-        tk.Label(header, text="🎮  AIコメント太郎  v4.20",
+        tk.Label(header, text="🎮  AIコメント太郎  v4.30",
                  bg=self.colors["bg"], fg=self.colors["text"],
                  font=("Yu Gothic UI", 16, "bold")).pack(side="left")
 
@@ -308,6 +308,7 @@ class BotGUI:
         self.var_channel = tk.StringVar()
         self.var_gemini_api_key = tk.StringVar()
         self.var_gemini_model = tk.StringVar()
+        self.var_gemini_model_smart = tk.StringVar()
         self.var_speech_min_length = tk.StringVar()
         self.var_comment_cooldown = tk.StringVar()
         self.var_silence_comment = tk.StringVar()
@@ -344,8 +345,23 @@ class BotGUI:
         # Gemini API設定（最重要）
         sec_gemini = make_section("Gemini API 設定（最重要）", color=self.colors["gemini"])
         make_field(sec_gemini, "Gemini APIキー", self.var_gemini_api_key, show="*")
-        make_note(sec_gemini, "APIキーの取得: https://aistudio.google.com/app/apikey  無料枠: 1日1500リクエスト / 1分15リクエスト")
-        make_note(sec_gemini, "使用モデル: gemini-2.5-flash-lite（固定）")
+        make_note(sec_gemini, "APIキーの取得: https://aistudio.google.com/app/apikey  無料枠: モデルごとに1日約1500リクエスト / 1分15リクエスト")
+        make_note(sec_gemini, "相槌用モデル: gemini-2.5-flash-lite（固定・文脈レーンやちょっかいで使用）")
+        smart_row = tk.Frame(sec_gemini, bg=self.colors["panel"])
+        smart_row.pack(fill="x", padx=12, pady=3)
+        tk.Label(smart_row, text="会話用モデル", width=26, anchor="w",
+                 bg=self.colors["panel"], fg=self.colors["text"],
+                 font=("Yu Gothic UI", 10)).pack(side="left")
+        smart_combo = ttk.Combobox(
+            smart_row, textvariable=self.var_gemini_model_smart,
+            values=["gemini-2.5-flash", "gemini-2.5-flash-lite",
+                    "gemini-3.1-flash-lite", "gemini-3.5-flash", "gemini-3.1-pro"],
+            font=("Yu Gothic UI", 10), width=24
+        )
+        smart_combo.pack(side="left")
+        make_note(sec_gemini, "呼びかけ・会話モード・視聴者対応・俳句で使う賢いモデル。推奨: gemini-2.5-flash（無料）。"
+                              "gemini-3.5-flash / gemini-3.1-pro は有料（APIキーの課金設定が必要）。"
+                              "失敗時は自動で相槌用モデルに切り替わるので安心です。")
 
         # AI キャラクター設定
         sec_ai = make_section("AI キャラクター設定", color="#00b894")
@@ -492,7 +508,8 @@ class BotGUI:
             self.var_twitch_client_secret.set(getattr(cfg, "TWITCH_CLIENT_SECRET", ""))
             self.var_channel.set(getattr(cfg, "CHANNEL_NAME", ""))
             self.var_gemini_api_key.set(getattr(cfg, "GEMINI_API_KEY", ""))
-            self.var_gemini_model.set(getattr(cfg, "GEMINI_MODEL", "gemini-1.5-flash"))
+            self.var_gemini_model.set(getattr(cfg, "GEMINI_MODEL", "gemini-2.5-flash-lite"))
+            self.var_gemini_model_smart.set(getattr(cfg, "GEMINI_MODEL_SMART", "gemini-2.5-flash"))
             self.var_speech_min_length.set(str(getattr(cfg, "SPEECH_MIN_LENGTH", "10")))
             self.var_comment_cooldown.set(str(getattr(cfg, "COMMENT_COOLDOWN_SECONDS", "20")))
             self.var_silence_comment.set(str(getattr(cfg, "SILENCE_COMMENT_THRESHOLD", "120")))
@@ -541,6 +558,8 @@ class BotGUI:
                     replacement = rf'\g<1>{new_value}'
                 return re.sub(pattern, replacement, text, flags=re.MULTILINE)
 
+            content = replace_value(content, "GEMINI_MODEL_SMART",
+                                    self.var_gemini_model_smart.get())
             content = replace_value(content, "SPEECH_MIN_LENGTH",
                                     self.var_speech_min_length.get(), is_string=False)
             content = replace_value(content, "COMMENT_COOLDOWN_SECONDS",
@@ -682,12 +701,13 @@ class BotGUI:
 
             logger = logging.getLogger("gui_bot")
             logger.info("=" * 50)
-            logger.info("AIコメント太郎 v4.20 を起動します（手帳2.0）")
+            logger.info("AIコメント太郎 v4.30 を起動します（モデル二段構え・会話継続モード）")
             logger.info(f"チャンネル: #{config.CHANNEL_NAME}")
             _engine = getattr(config, 'SPEECH_ENGINE', 'whisper')
             _engine_label = f"faster-whisper {getattr(config, 'WHISPER_MODEL_SIZE', 'medium')}（ローカル）" if _engine == 'whisper' else "Google Web Speech API"
             logger.info(f"音声認識: {_engine_label}")
-            logger.info(f"コメント生成: Gemini API ({config.GEMINI_MODEL})")
+            _smart = getattr(config, 'GEMINI_MODEL_SMART', '') or config.GEMINI_MODEL
+            logger.info(f"コメント生成: 相槌={config.GEMINI_MODEL} / 会話={_smart}")
             logger.info(f"発言フィルター: {config.SPEECH_MIN_LENGTH}文字以下を無視")
             logger.info(f"会話ステート: 最大{config.CONVERSATION_MAX_TURNS}往復 / {config.TOPIC_COOLDOWN_SECONDS}秒クールダウン")
             logger.info(f"二レーン化: 切れ目{getattr(config, 'CONTEXT_GAP_SECONDS', 7)}秒 / 最低間隔{config.COMMENT_COOLDOWN_SECONDS}秒 / ちょっかい確率{int(getattr(config, 'CHOKKAI_PROBABILITY', 0.25) * 100)}%")
@@ -757,9 +777,10 @@ class BotGUI:
             logger.info(f"[イベント] 次まで {next_event_interval // 60} 分")
 
             def _call_gemini_lite(prompt: str) -> str:
-                """俳句・謎かけ用に生成する（通常会話と同じFlash-Liteを使用）
-                v4.00: 旧名 _call_gemini_flash から改名（Flashは使っていないため）"""
-                result = comment_gen._call_gemini(prompt)
+                """俳句・謎かけ用に生成する。
+                v4.30: 上位モデル（GEMINI_MODEL_SMART）を使用。
+                5・7・5の音節数えはFlash-Liteには荷が重かったため"""
+                result = comment_gen._call_gemini(prompt, smart=True)
                 return result or ""
 
             def _build_event_context() -> tuple:

@@ -118,7 +118,7 @@ class CommentGenerator:
         self._last_comment_time = 0.0
         self._last_comments = []
         self._conversation_history = []
-        self._gemini_model = None
+        self._gemini_models = {}  # v4.30: モデル名→初期化済みモデルのキャッシュ
         self.is_generating = False
         self.api_request_times = []
         self._silence_prompt_index = 0
@@ -207,7 +207,7 @@ class CommentGenerator:
         self._last_comments = []
         self._conversation_state = ConversationState.IDLE
         self._current_topic_turns = 0
-        self._gemini_model = None
+        self._gemini_models = {}
         self._stream_info = {}
         logger.info("会話履歴とモデルをリセットしました")
 
@@ -223,11 +223,14 @@ class CommentGenerator:
         if info:
             logger.info(f"配信情報をセット: {info}")
         # モデルを再初期化してシステムプロンプトに反映
-        self._gemini_model = None
+        self._gemini_models = {}
 
-    def _get_gemini_model(self):
-        if self._gemini_model is not None:
-            return self._gemini_model
+    def _get_gemini_model(self, model_name: str = ""):
+        """指定モデルを取得する（v4.30: モデル名ごとにキャッシュ）"""
+        if not model_name:
+            model_name = getattr(self.config, 'GEMINI_MODEL', 'gemini-2.5-flash-lite')
+        if model_name in self._gemini_models:
+            return self._gemini_models[model_name]
         try:
             import google.generativeai as genai
             api_key = getattr(self.config, 'GEMINI_API_KEY', '')
@@ -235,9 +238,8 @@ class CommentGenerator:
                 logger.error("Gemini APIキーが設定されていません。")
                 return None
             genai.configure(api_key=api_key)
-            model_name = getattr(self.config, 'GEMINI_MODEL', 'gemini-1.5-flash')
             max_tokens = getattr(self.config, 'COMMENT_MAX_TOKENS', 120)
-            self._gemini_model = genai.GenerativeModel(
+            self._gemini_models[model_name] = genai.GenerativeModel(
                 model_name=model_name,
                 generation_config=genai.GenerationConfig(
                     temperature=0.9,
@@ -255,25 +257,40 @@ class CommentGenerator:
                 system_instruction=self.get_system_prompt()
             )
             logger.info(f"Gemini APIモデルを初期化しました: {model_name}")
-            return self._gemini_model
+            return self._gemini_models[model_name]
         except Exception as e:
             logger.error(f"Gemini APIの初期化エラー: {e}")
             return None
 
-    def _call_gemini(self, prompt: str) -> Optional[str]:
+    def _call_gemini(self, prompt: str, smart: bool = False) -> Optional[str]:
+        """Gemini APIを呼び出す。
+
+        v4.30: smart=True で会話用の上位モデル（GEMINI_MODEL_SMART）を使う。
+        上位モデルが失敗（レート制限・503等）した場合は、自動で相槌用の
+        軽量モデルに退避するので、コメントが止まることはない。
+        """
+        lite_model = getattr(self.config, 'GEMINI_MODEL', 'gemini-2.5-flash-lite')
+        smart_model = getattr(self.config, 'GEMINI_MODEL_SMART', '') or lite_model
+
+        if smart and smart_model != lite_model:
+            result = self._call_gemini_once(prompt, model_name=smart_model)
+            if result is not None:
+                return result
+            logger.warning(f"会話用モデル({smart_model})での生成に失敗。{lite_model}に退避します")
+            return self._call_gemini_once(prompt, model_name=lite_model)
 
         for attempt in range(2):
-            result = self._call_gemini_once(prompt)
+            result = self._call_gemini_once(prompt, model_name=lite_model)
             if result is not None:
                 return result
             if attempt == 0:
                 logger.debug("1回目の生成が短すぎたか失敗。再試行します...")
         return None
 
-    def _call_gemini_once(self, prompt: str) -> Optional[str]:
+    def _call_gemini_once(self, prompt: str, model_name: str = "") -> Optional[str]:
         """Gemini APIを1回呼び出す。"""
         try:
-            model = self._get_gemini_model()
+            model = self._get_gemini_model(model_name)
             if model is None:
                 return None
 
@@ -699,7 +716,7 @@ class CommentGenerator:
 自分の言葉でしっかり答えてください。
 必ず日本語のみで、文章を最後まで書き切ること。"""
 
-        comment = self._call_gemini(prompt)
+        comment = self._call_gemini(prompt, smart=True)  # v4.30: 会話は上位モデル
         if comment:
             self._record_comment(comment)
             self._last_comment_time = time.time()
@@ -717,13 +734,13 @@ class CommentGenerator:
         if cmd_type == 'hello':
             username = content.strip() if content.strip() else '視聴者'
             prompt = f"Twitchの視聴者「{username}」さんが挨拶してくれました。フレンドリーに返してください。1〜2文、日本語のみ。"
-            comment = self._call_gemini(prompt)
+            comment = self._call_gemini(prompt, smart=True)  # v4.30: 視聴者対応は上位モデル
         else:
             question = content.strip() if content.strip() else '何か話して'
             history_text = self._build_history_text()
             prompt = f"""{history_text}視聴者からの質問：「{question}」
 自然に答えてください。1〜3文、日本語のみ。"""
-            comment = self._call_gemini(prompt)
+            comment = self._call_gemini(prompt, smart=True)  # v4.30: 視聴者対応は上位モデル
 
         if comment:
             self._record_comment(comment)
