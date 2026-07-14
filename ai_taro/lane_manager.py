@@ -478,16 +478,22 @@ class LaneManager:
         prompt = f"""以下はTwitch配信の直近の会話です。
 {hist_text}
 
-配信者がAIの太郎に「今のを覚えて」と指示しました。会話から記憶すべき情報を1つ選び、次のJSONだけを出力してください（説明や前置きは不要）:
+配信者がAIの太郎に「今のを覚えて」と指示しました。会話から記憶すべき情報を1つ選び、次のいずれかの形のJSONだけを出力してください（説明や前置きは不要）:
 {{"kind": "correction", "wrong": "誤変換された語", "right": "正しい語", "confirm": "覚えたよ！で始まる確認の一言"}}
+{{"kind": "glossary", "term": "用語", "desc": "意味", "confirm": "同上"}}
+{{"kind": "status", "text": "近況の内容", "confirm": "同上"}}
+{{"kind": "joke", "text": "定番ネタ・合言葉", "confirm": "同上"}}
+{{"kind": "none"}}
 
 kindの種類:
-- "correction": 音声認識の誤変換の訂正（wrongとrightを入れる）
-- "glossary": 用語・固有名詞の意味（wrongの代わりに "term" と "desc" を入れる）
-- "status": 配信者の近況（"text" に内容）
-- "joke": 定番ネタ・合言葉（"text" に内容）
+- "correction": 音声認識の誤変換の訂正。**配信者が「XじゃなくてY」「Xは間違い、正しくはY」のように、誤りと正解をはっきり言い直している場合だけ**使うこと。
+  似た言葉が2つ出てきただけの場合や、どちらが正しいか会話から断定できない場合は correction にしないこと
+- "glossary": 用語・固有名詞の意味
+- "status": 配信者の近況
+- "joke": 定番ネタ・合言葉
 - "none": 何を覚えるべきか不明
 
+間違った訂正を覚えると音声認識が壊れるため、correction にするか迷ったら "none" か他の種類を選ぶこと。
 confirmには「覚えたよ！」で始めて、何をどう覚えたかを具体的に短く言うこと。"""
 
         raw = self.comment_gen._call_gemini_raw(prompt)
