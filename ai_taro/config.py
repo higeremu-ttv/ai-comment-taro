@@ -267,5 +267,23 @@ VIEWER_COMMENT_REACTION_ENABLED = True
 # v4.10: 反応の頻度は CHOKKAI_PROBABILITY / CHOKKAI_MIN_INTERVAL（上記）で調整
 
 # 反応するボットアカウント（お知らせ系）カンマ区切り
-REACTION_BOT_ACCOUNTS = "nightbot,streamelements,frostytools"
+REACTION_BOT_ACCOUNTS = "streamelements,frostytools"
+
+# ============================================================
+# ギミック参加設定（v4.53）
+# ============================================================
+# ボット告知にギミック単語が含まれていたら、太郎が少し間を置いて
+# 「その単語だけ」をチャットに投稿して遊びに参加する。AIを呼ばないのでコストゼロ。
+# 告知ボットを「除外アカウント」に入れていても、この機能は別系統なので動く。
+GIMMICK_ENABLED = True
+
+# 参加する単語（カンマ区切り）。たぬえさ等でコマンドを増やしたらここに足す
+GIMMICK_WORDS = "行進,ランダム,おなかすいた"
+
+# どのアカウントの告知を見るか（カンマ区切り）
+GIMMICK_ANNOUNCER_ACCOUNTS = "nightbot"
+
+# 告知を見てから投稿するまでの間（秒）。この範囲でランダムに待つ
+GIMMICK_DELAY_MIN = 5
+GIMMICK_DELAY_MAX = 30
 

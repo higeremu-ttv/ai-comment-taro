@@ -693,6 +693,37 @@ check("普通の俳句はこれまで通り通す",
 check("「実際には」を含む普通の会話は誤爆しない",
       gen9._postprocess_comment("実際にはそんなに強くない武器だったよね！") is not None)
 
+# ============================================================
+# v4.53 ギミック参加のテスト
+# ============================================================
+from twitch_module import TwitchModule
+
+cfg_g = FakeConfig()
+cfg_g.GIMMICK_ENABLED = True
+cfg_g.GIMMICK_WORDS = "行進,ランダム,おなかすいた"
+cfg_g.GIMMICK_ANNOUNCER_ACCOUNTS = "nightbot"
+cfg_g.GIMMICK_DELAY_MIN = 0
+cfg_g.GIMMICK_DELAY_MAX = 0
+tm = TwitchModule(cfg_g)
+
+check("告知にギミック単語→検知する",
+      tm.check_gimmick("nightbot", "チャット欄に「行進」と入力するとスタンプが行進します。") == "行進")
+check("ギミック単語なしの告知→検知しない",
+      tm.check_gimmick("nightbot", "チャンネルポイントにはチンチロがあります") is None)
+check("告知アカウント以外の発言→検知しない",
+      tm.check_gimmick("turbo35gtr", "行進") is None)
+check("大文字小文字が違っても告知アカウントを認識する",
+      tm.check_gimmick("NightBot", "「ランダム」といれると賑やかになります") == "ランダム")
+
+tm.schedule_gimmick("行進")
+check("投稿が予約される", len(tm._gimmick_pending) == 1)
+check("時間が来たら取り出せる（遅延0秒）", tm.pop_due_gimmick() == "行進")
+check("取り出した後は空", tm.pop_due_gimmick() is None)
+
+cfg_g.GIMMICK_ENABLED = False
+check("機能OFFなら検知しない",
+      tm.check_gimmick("nightbot", "「行進」と入力するとスタンプが行進します") is None)
+
 print()
 ok = sum(1 for _, c in results if c)
 print(f"===== 結果: {ok}/{len(results)} 件成功 =====")

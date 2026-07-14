@@ -47,6 +47,9 @@ class TwitchModule:
         # 反応するボットアカウント
         self._reaction_bot_accounts = self._parse_reaction_bot_accounts()
 
+        # v4.53: ギミック参加（ボット告知の単語に釣られて参加する）
+        self._gimmick_pending = []  # [(投稿予定時刻, 単語)]
+
     def set_viewer_comment_callback(self, callback):
         """視聴者コメントを受け取った時に呼ぶコールバックを設定する"""
         self._viewer_comment_callback = callback
@@ -69,6 +72,48 @@ class TwitchModule:
         if bot_nick:
             accounts.add(bot_nick)
         return accounts
+
+    # ------------------------------------------------------------
+    # v4.53: ギミック参加
+    # ボット告知（「行進」と入力すると〜等）に含まれるギミック単語を拾い、
+    # 少し間を置いて「その単語だけ」を投稿して遊びに参加する。
+    # AIおしゃべり反応（無視/反応ボット設定）とは別系統なので、
+    # 告知ボットが除外アカウントでも動く。
+    # ------------------------------------------------------------
+
+    def check_gimmick(self, username: str, content: str) -> Optional[str]:
+        """告知にギミック単語が含まれていたら、その単語を返す"""
+        if not getattr(self.config, 'GIMMICK_ENABLED', False):
+            return None
+        if not content:
+            return None
+        raw = getattr(self.config, 'GIMMICK_ANNOUNCER_ACCOUNTS', 'nightbot')
+        announcers = {a.strip().lower() for a in raw.split(',') if a.strip()}
+        if username.lower() not in announcers:
+            return None
+        words = getattr(self.config, 'GIMMICK_WORDS', '')
+        for word in (w.strip() for w in words.split(',')):
+            if word and word in content:
+                return word
+        return None
+
+    def schedule_gimmick(self, word: str):
+        """ギミック単語の投稿を予約する（すぐ打つと機械的に見えるため間を置く）"""
+        import random as _random
+        dmin = float(getattr(self.config, 'GIMMICK_DELAY_MIN', 5))
+        dmax = float(getattr(self.config, 'GIMMICK_DELAY_MAX', 30))
+        delay = _random.uniform(dmin, max(dmin, dmax))
+        self._gimmick_pending.append((time.time() + delay, word))
+        logger.info(f"[ギミック参加] {int(delay)}秒後に「{word}」を投稿します")
+
+    def pop_due_gimmick(self) -> Optional[str]:
+        """投稿時刻になったギミック単語を1件取り出す（なければNone）"""
+        now = time.time()
+        for i, (due, word) in enumerate(self._gimmick_pending):
+            if now >= due:
+                self._gimmick_pending.pop(i)
+                return word
+        return None
 
     def record_chat_message(self, username: str):
         """他視聴者のコメントを記録する（除外アカウントは無視）"""
@@ -225,6 +270,10 @@ class TwitchModule:
                         # 自分自身のコメントは無視
                         if username.lower() == config.BOT_NICK.lower():
                             return
+                        # v4.53: ギミック参加（除外フィルタの手前で単語だけ拾う）
+                        gimmick_word = twitch_module_ref.check_gimmick(username, content)
+                        if gimmick_word:
+                            twitch_module_ref.schedule_gimmick(gimmick_word)
                         # コメントを記録（除外アカウントは内部でフィルタ）
                         twitch_module_ref.record_chat_message(username)
                         logger.debug(f"他の視聴者コメント受信: {username}: {content}")
@@ -289,6 +338,11 @@ class TwitchModule:
                     fail_count = 0       # 連続失敗回数
                     while True:
                         try:
+                            # v4.53: 投稿時刻が来たギミック単語を通常キューへ流す
+                            gimmick = twitch_module_ref.pop_due_gimmick()
+                            if gimmick:
+                                message_queue.put(gimmick)
+
                             if pending is not None:
                                 message, is_priority = pending
                             else:

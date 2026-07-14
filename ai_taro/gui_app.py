@@ -31,7 +31,7 @@ class QueueHandler(logging.Handler):
 class BotGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("AIコメント太郎 v4.52")
+        self.root.title("AIコメント太郎 v4.53")
         self.root.geometry("820x660")
         self.root.resizable(True, True)
         self.root.configure(bg="#1a1a2e")
@@ -126,7 +126,7 @@ class BotGUI:
         header = tk.Frame(self.root, bg=self.colors["bg"], pady=10)
         header.pack(fill="x", padx=16)
 
-        tk.Label(header, text="🎮  AIコメント太郎  v4.52",
+        tk.Label(header, text="🎮  AIコメント太郎  v4.53",
                  bg=self.colors["bg"], fg=self.colors["text"],
                  font=("Yu Gothic UI", 16, "bold")).pack(side="left")
 
@@ -323,6 +323,8 @@ class BotGUI:
         self.var_chat_mute_enabled = tk.BooleanVar()
         self.var_viewer_comment_reaction_enabled = tk.BooleanVar()
         self.var_reaction_bot_accounts = tk.StringVar()
+        self.var_gimmick_enabled = tk.BooleanVar()
+        self.var_gimmick_words = tk.StringVar()
         self.var_chat_threshold = tk.StringVar()
         self.var_chat_window = tk.StringVar()
         self.var_chat_quiet = tk.StringVar()
@@ -466,6 +468,20 @@ class BotGUI:
         make_field(sec4, "反応するボットアカウント", self.var_reaction_bot_accounts)
         make_note(sec4, "お知らせ系ボットのみ指定。例: nightbot,streamelements")
 
+        # ギミック参加設定（v4.53）
+        chk_gimmick_row = tk.Frame(sec4, bg=self.colors["panel"])
+        chk_gimmick_row.pack(fill="x", padx=12, pady=3)
+        tk.Checkbutton(
+            chk_gimmick_row, text="ボット告知のギミックに参加する（単語だけ投稿）",
+            variable=self.var_gimmick_enabled,
+            bg=self.colors["panel"], fg=self.colors["text"],
+            selectcolor=self.colors["log_bg"],
+            activebackground=self.colors["panel"],
+            font=("Yu Gothic UI", 10)
+        ).pack(side="left")
+        make_field(sec4, "参加するギミック単語", self.var_gimmick_words)
+        make_note(sec4, "告知にこの単語があると太郎がその単語だけを投稿。例: 行進,ランダム,おなかすいた")
+
         # 視聴者コマンド設定
         sec_cmd = make_section("視聴者コマンド設定", color="#ffd93d")
         chk_cmd_row = tk.Frame(sec_cmd, bg=self.colors["panel"])
@@ -549,6 +565,8 @@ class BotGUI:
             self.var_chat_mute_enabled.set(getattr(cfg, "CHAT_ACTIVITY_MUTE_ENABLED", True))
             self.var_viewer_comment_reaction_enabled.set(getattr(cfg, "VIEWER_COMMENT_REACTION_ENABLED", True))
             self.var_reaction_bot_accounts.set(getattr(cfg, "REACTION_BOT_ACCOUNTS", "nightbot,streamelements"))
+            self.var_gimmick_enabled.set(getattr(cfg, "GIMMICK_ENABLED", True))
+            self.var_gimmick_words.set(getattr(cfg, "GIMMICK_WORDS", "行進,ランダム,おなかすいた"))
             self.var_chat_threshold.set(str(getattr(cfg, "CHAT_ACTIVITY_THRESHOLD", "3")))
             self.var_chat_window.set(str(getattr(cfg, "CHAT_ACTIVITY_WINDOW_SECONDS", "60")))
             self.var_chat_quiet.set(str(getattr(cfg, "CHAT_QUIET_RESUME_SECONDS", "30")))
@@ -615,6 +633,10 @@ class BotGUI:
                                     str(self.var_viewer_comment_reaction_enabled.get()), is_string=False)
             content = replace_value(content, "REACTION_BOT_ACCOUNTS",
                                     self.var_reaction_bot_accounts.get())
+            content = replace_value(content, "GIMMICK_ENABLED",
+                                    str(self.var_gimmick_enabled.get()), is_string=False)
+            content = replace_value(content, "GIMMICK_WORDS",
+                                    self.var_gimmick_words.get())
             content = replace_value(content, "CHAT_ACTIVITY_THRESHOLD",
                                     self.var_chat_threshold.get(), is_string=False)
             content = replace_value(content, "CHAT_ACTIVITY_WINDOW_SECONDS",
@@ -738,7 +760,7 @@ class BotGUI:
 
             logger = logging.getLogger("gui_bot")
             logger.info("=" * 50)
-            logger.info("AIコメント太郎 v4.52 を起動します（会話の質改善）")
+            logger.info("AIコメント太郎 v4.53 を起動します（ギミック参加）")
             logger.info(f"チャンネル: #{config.CHANNEL_NAME}")
             _engine = getattr(config, 'SPEECH_ENGINE', 'whisper')
             _engine_label = f"faster-whisper {getattr(config, 'WHISPER_MODEL_SIZE', 'medium')}（ローカル）" if _engine == 'whisper' else "Google Web Speech API"
