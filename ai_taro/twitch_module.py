@@ -217,6 +217,11 @@ class TwitchModule:
                             return
                         username = message.author.name
                         content = message.content.strip() if message.content else ''
+                        # v4.50: Twitch表示名（例: 桃煌ぺてぃる）も取得する
+                        try:
+                            display_name = message.author.display_name or ''
+                        except Exception:
+                            display_name = ''
                         # 自分自身のコメントは無視
                         if username.lower() == config.BOT_NICK.lower():
                             return
@@ -233,11 +238,13 @@ class TwitchModule:
                             if username_lower in reaction_bots:
                                 # 反応ボットのお知らせに反応
                                 logger.info(f"[ボット通知] {username}: {content}")
-                                twitch_module_ref._viewer_comment_callback(content, username, is_bot=True)
+                                twitch_module_ref._viewer_comment_callback(
+                                    content, username, is_bot=True, display_name=display_name)
                             elif username_lower not in excluded and content and len(content) >= 4:
                                 # 通常視聴者コメントへの反応
                                 if getattr(config, 'VIEWER_COMMENT_REACTION_ENABLED', True):
-                                    twitch_module_ref._viewer_comment_callback(content, username, is_bot=False)
+                                    twitch_module_ref._viewer_comment_callback(
+                                        content, username, is_bot=False, display_name=display_name)
 
                         # 視聴者コマンドの処理
                         if twitch_module_ref._viewer_command_callback and getattr(config, 'VIEWER_COMMANDS_ENABLED', True):

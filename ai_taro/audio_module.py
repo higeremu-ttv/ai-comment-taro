@@ -41,6 +41,7 @@ class AudioModule:
         self._min_length = getattr(config, 'SPEECH_MIN_LENGTH', 4)
         self._whisper_error_count = 0
         self._extra_vocab = []  # v4.20: 手帳の固有名詞辞書から流れてくる追加語彙
+        self._corrections = {}  # v4.43: 訂正辞書（誤変換された語→正しい語）
 
         # 途中切れ発言の結合設定
         self._merge_enabled = getattr(config, 'INCOMPLETE_SPEECH_MERGE_ENABLED', True)
@@ -164,6 +165,23 @@ class AudioModule:
         self._extra_vocab = [t for t in (terms or []) if t][:20]
         if self._extra_vocab:
             logger.info(f"認識ヒントに手帳の語彙を追加: {len(self._extra_vocab)}語")
+
+    def set_corrections(self, corrections: dict):
+        """訂正辞書をセットする（v4.43）。認識結果の誤変換を即座に直す"""
+        self._corrections = {
+            k: v for k, v in (corrections or {}).items()
+            if k and v and k != v and len(k) >= 2
+        }
+        if self._corrections:
+            logger.info(f"訂正辞書を適用: {len(self._corrections)}件（誤変換を自動補正します）")
+
+    def _apply_corrections(self, text: str) -> str:
+        """認識結果に訂正辞書を適用する（v4.43）"""
+        for wrong, right in self._corrections.items():
+            if wrong in text:
+                text = text.replace(wrong, right)
+                logger.info(f"[誤変換補正] 「{wrong}」→「{right}」")
+        return text
 
     def load_model(self):
         """認識エンジンを初期化する。whisper指定で失敗した場合はgoogleにフォールバック"""
@@ -385,6 +403,7 @@ class AudioModule:
 
                     if text:
                         text = text.strip()
+                        text = self._apply_corrections(text)  # v4.43: 誤変換の自動補正
                         if len(text) < self._min_length:
                             logger.info(f"[フィルター] スキップ: '{text}' ({len(text)}文字)")
                         else:

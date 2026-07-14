@@ -68,6 +68,14 @@ class LaneManager:
         self._conversation_until = 0.0   # この時刻まで会話モード
         self._conversation_turns = 0     # 現在の会話の往復数
 
+        # 取材モード（v4.50: 呼び名が未設定の視聴者に太郎が質問する）
+        self._interview = None           # 進行中の取材 {'username','display','until'}
+        self._interviewed = set()        # この配信で質問済みの人
+        self._interview_count = 0
+
+        # 「覚えて」コマンド（v4.50: 直前に覚えた内容。取り消し用）
+        self._last_memory = None         # (kind, key, prev_value)
+
     # ============================================================
     # 共通部品
     # ============================================================
@@ -121,8 +129,8 @@ class LaneManager:
             if not text.startswith(name):
                 continue
             rest = text[len(name):]
-            # v4.41: 「太郎は〜」「太郎さ〜」「太郎ね〜」の助詞にも対応
-            for sep in ['、', '，', ' ', '。', '！', '？', '!', '?', 'は', 'さ', 'ね']:
+            # v4.41: 「太郎は〜」「太郎さ〜」等の助詞にも対応（v4.42: 「の」追加）
+            for sep in ['、', '，', ' ', '。', '！', '？', '!', '?', 'は', 'さ', 'ね', 'の']:
                 if rest.startswith(sep):
                     rest = rest[len(sep):]
                     break
@@ -177,15 +185,41 @@ class LaneManager:
         if is_direct or in_conversation:
             # 【即時レーン】クールダウン無視で即返答
             ai_name = getattr(self.config, 'AI_NAME', 'AIコメント太郎')
+            q = question or text
             if is_direct:
                 self._conversation_turns = 0  # 新しい会話の始まり
-                logger.info(f"[{ai_name}呼びかけ] {question or text}")
+                logger.info(f"[{ai_name}呼びかけ] {q}")
             else:
                 logger.info(f"[会話モード] 続きの発言として応答: {text[:30]}")
-            comment = self.comment_gen.generate(
-                CommentTrigger.DIRECT_CONVERSATION,
-                speech_text=question or text
-            )
+
+            # v4.50: 特殊コマンドの判定（取り消し → 覚えて → 検索 の順）
+            forget_triggers = [t for t in getattr(self.config, 'FORGET_TRIGGERS',
+                               '登録しないで,覚えないで,取り消して').split(',') if t]
+            if any(t in q for t in forget_triggers):
+                self._handle_forget()
+                return
+            remember_triggers = [t for t in getattr(self.config, 'REMEMBER_TRIGGERS',
+                                 '覚えて,覚えた？,覚えた?,メモして,記録して').split(',') if t]
+            if any(t in q for t in remember_triggers):
+                self._handle_remember()
+                return
+
+            search_triggers = [t for t in getattr(self.config, 'SEARCH_TRIGGERS',
+                               '調べて,検索して,ググって,について教えて').split(',') if t]
+            use_search = (getattr(self.config, 'SEARCH_ENABLED', True)
+                          and any(t in q for t in search_triggers))
+
+            if use_search:
+                logger.info(f"[検索] {q}")
+                comment = self.comment_gen.generate_search_answer(q)
+                if not comment:
+                    logger.info("[検索] 失敗したため通常会話で返答します")
+                    comment = self.comment_gen.generate(
+                        CommentTrigger.DIRECT_CONVERSATION, speech_text=q)
+            else:
+                comment = self.comment_gen.generate(
+                    CommentTrigger.DIRECT_CONVERSATION, speech_text=q)
+
             if comment:
                 logger.info(f"コメント送信(即時): {comment}")
                 self._send_priority(comment)
@@ -198,6 +232,11 @@ class LaneManager:
                     window = getattr(self.config, 'CONVERSATION_WINDOW_SECONDS', 30)
                     self._conversation_until = time.time() + window
             return
+
+        # v4.50: 取材の回答待ち中なら、配信者の発言を答えとして解釈してみる
+        if self._interview and now < self._interview['until']:
+            if self._handle_interview_answer(text, from_viewer=False):
+                return  # 答えとして処理できた
 
         # 【文脈レーン】独り言・叫び → 捨てずにメモへ
         self._memo_append(text)
@@ -215,9 +254,11 @@ class LaneManager:
             logger.info(f"[視聴者コマンド] {username} → {comment}")
             self._send_priority(comment)
 
-    def on_viewer_comment(self, content: str, username: str, is_bot: bool = False):
+    def on_viewer_comment(self, content: str, username: str, is_bot: bool = False,
+                          display_name: str = ""):
         """視聴者コメント・ボット通知を受け取る。
         名指し → 即時レーン / それ以外 → 文脈材料＋ちょっかい判定
+        v4.50: 取材の回答受付・取材の開始判定・検索トリガーも担当
         """
         now = time.time()
 
@@ -250,7 +291,13 @@ class LaneManager:
         self._active_viewers[username] = now  # v4.20: 手帳の視聴者ページ用
         profile_mgr = getattr(self.comment_gen, '_profile_manager', None)
         if profile_mgr:
-            profile_mgr.add_viewer_comment(username, content)
+            profile_mgr.add_viewer_comment(username, content, display_name)
+
+        # --- v4.50: 取材の回答待ち中なら、本人のコメントを答えとして最優先 ---
+        if (self._interview and now < self._interview['until']
+                and username == self._interview['username']):
+            if self._handle_interview_answer(content, from_viewer=True):
+                return
         if len(content) >= 4:
             self.comment_gen._conversation_history.append({
                 'role': 'viewer',
@@ -262,11 +309,27 @@ class LaneManager:
         # --- 名指しコメント → 【即時レーン】 ---
         ai_name = getattr(self.config, 'AI_NAME', '太郎')
         if ai_name in content or 'コメント太郎' in content or '太郎' in content:
+            # v4.50: 視聴者からの「調べて」も検索で答える
+            search_triggers = [t for t in getattr(self.config, 'SEARCH_TRIGGERS',
+                               '調べて,検索して,ググって,について教えて').split(',') if t]
+            if (getattr(self.config, 'SEARCH_ENABLED', True)
+                    and any(t in content for t in search_triggers)):
+                logger.info(f"[検索] 視聴者{username}から: {content}")
+                comment = self.comment_gen.generate_search_answer(content)
+                if comment:
+                    self._send_priority(comment)
+                    return
             prompt = self._build_viewer_reaction_prompt(username, content)
-            comment = self.comment_gen._call_gemini(prompt, smart=True)  # v4.30: 名指しは上位モデル
+            # v4.50: MENTION_USE_SMART=False でLiteに切替可能（節約実験用）
+            use_smart = getattr(self.config, 'MENTION_USE_SMART', True)
+            comment = self.comment_gen._call_gemini(prompt, smart=use_smart)
             if comment:
                 logger.info(f"[名指し反応] {username}: {content} → {comment}")
                 self._send_priority(comment)
+            return
+
+        # --- v4.50: 呼び名が未設定なら取材のチャンス ---
+        if self._maybe_start_interview(username):
             return
 
         # --- 普通のコメント → ちょっかい判定（ランダム） ---
@@ -293,12 +356,25 @@ class LaneManager:
             self._send_normal(comment)
 
     def _build_viewer_reaction_prompt(self, username: str, content: str) -> str:
-        """視聴者コメントへの反応プロンプト（常連かどうかで変える）"""
+        """視聴者コメントへの反応プロンプト（常連かどうかで変える）。
+        v4.43: ユーザーIDではなく呼び名で呼ぶ。初見さんには「はじめまして」。"""
         profile_mgr = getattr(self.comment_gen, '_profile_manager', None)
         viewer_count = 0
+        display = username
         if profile_mgr:
             viewers = profile_mgr._profile.get('known_viewers', {})
             viewer_count = viewers.get(username, {}).get('count', 0)
+            try:
+                display = profile_mgr._display_name(username)
+            except Exception:
+                pass
+        has_name = (display != username)
+
+        # 呼び方のルール（IDの連呼を防ぐ）
+        if has_name:
+            name_rule = f"※この人を呼ぶときは必ず「{display}」と呼ぶこと。ユーザーIDでは呼ばないこと。"
+        else:
+            name_rule = "※ユーザーID（英数字の羅列）をそのまま呼び名にしないこと。名前は出さずに自然に返すこと。"
 
         # v4.20: 手帳にその人のメモがあれば添える
         notes_text = ""
@@ -308,10 +384,194 @@ class LaneManager:
                 notes_text = f"（手帳メモ: この人は {'、'.join(notes[-2:])}）"
 
         if viewer_count >= 5:
-            return (f"常連の「{username}」が「{content}」とコメントしました。{notes_text}"
+            return (f"常連の「{display}」が「{content}」とコメントしました。{notes_text}{name_rule}"
                     f"親しみを込めて視聴者として自然に1文で反応してください。日本語のみ。")
-        return (f"Twitchチャットに「{username}」が「{content}」と書きました。{notes_text}"
+        if viewer_count <= 1:
+            return (f"初めて見る視聴者（ID: {username}）が「{content}」とコメントしました。{name_rule}"
+                    f"「はじめまして」の気持ちを込めて、視聴者として温かく1文で反応してください。日本語のみ。")
+        return (f"Twitchチャットで「{display}」が「{content}」と書きました。{notes_text}{name_rule}"
                 f"視聴者として自然に1文で反応してください。日本語のみ。")
+
+    # ============================================================
+    # 取材モード（v4.50: 太郎が呼び名を質問して手帳を埋める）
+    # ============================================================
+
+    def _maybe_start_interview(self, username: str) -> bool:
+        """呼び名が未設定の視聴者に取材（質問）を始める。始めたらTrue"""
+        if not getattr(self.config, 'INTERVIEW_ENABLED', True):
+            return False
+        max_per_stream = getattr(self.config, 'INTERVIEW_MAX_PER_STREAM', 3)
+        if (self._interview is not None
+                or self._interview_count >= max_per_stream
+                or username in self._interviewed):
+            return False
+        profile_mgr = getattr(self.comment_gen, '_profile_manager', None)
+        if not profile_mgr:
+            return False
+        val = profile_mgr._profile.get('viewer_names', {}).get(username)
+        if val != "未設定":
+            return False  # 設定済み、またはNone（無視リスト）は取材しない
+        # 太郎の直前コメントから15秒は空ける
+        if time.time() - self._last_comment_time < 15:
+            return False
+
+        display = profile_mgr._display_name(username)
+        question = f"{display}さん、こんにちは！ところで、なんてお呼びすればいいですか？"
+        self._send_normal(question)  # 定型文なのでAPI消費ゼロ
+        window = getattr(self.config, 'INTERVIEW_ANSWER_WINDOW', 120)
+        self._interview = {'username': username, 'display': display,
+                           'until': time.time() + window}
+        self._interviewed.add(username)
+        self._interview_count += 1
+        logger.info(f"[取材] {display}（{username}）さんに呼び名を質問しました")
+        return True
+
+    def _handle_interview_answer(self, content: str, from_viewer: bool) -> bool:
+        """取材への答えを解釈して呼び名を保存する。処理できたらTrue"""
+        iv = self._interview
+        who = "本人" if from_viewer else "配信者"
+        prompt = (f"視聴者「{iv['display']}」に「なんてお呼びすればいいですか？」と質問しました。\n"
+                  f"{who}の返事:「{content}」\n"
+                  f"この返事に呼び名（呼んでほしい名前）が含まれていれば、呼び名だけを出力してください。\n"
+                  f"含まれていない・関係ない話なら「なし」とだけ出力してください。")
+        raw = self.comment_gen._call_gemini_raw(prompt)
+        name = (raw or "").strip().strip('「」『』"\'。、 ')
+        if (not name or name == "なし" or len(name) > 15
+                or self.comment_gen._contains_ng_word(name)):
+            return False  # 答えではなかった（会話は通常処理に流す）
+
+        profile_mgr = getattr(self.comment_gen, '_profile_manager', None)
+        prev = profile_mgr.set_viewer_name(iv['username'], name) if profile_mgr else "未設定"
+        self._last_memory = ('viewer_name', iv['username'], prev)
+        self._interview = None
+        confirm = f"{name}さんですね、覚えました！これからよろしくね！"
+        logger.info(f"[取材完了] {iv['username']} = {name}")
+        self._send_priority(confirm)
+        return True
+
+    # ============================================================
+    # 「覚えて」コマンド（v4.50: 声で手帳に書き込む）
+    # ============================================================
+
+    @staticmethod
+    def _parse_json(raw: str):
+        """AIの出力からJSONを取り出す（```json フェンス等を除去）"""
+        import json as _json
+        if not raw:
+            return None
+        text = raw.strip().replace('```json', '').replace('```', '').strip()
+        try:
+            return _json.loads(text)
+        except Exception:
+            return None
+
+    def _handle_remember(self):
+        """直近の会話から記憶すべきことを抽出して手帳に即時保存する"""
+        history = self.comment_gen._conversation_history[-8:]
+        if not history:
+            self._send_priority("ごめん、覚えるための会話がまだないみたいだ。もう一回教えてくれる？")
+            return
+        hist_text = "\n".join(
+            f"{'配信者' if m.get('role') == 'streamer' else ('視聴者' if m.get('role') == 'viewer' else '太郎')}: {m.get('content', '')}"
+            for m in history
+        )
+        prompt = f"""以下はTwitch配信の直近の会話です。
+{hist_text}
+
+配信者がAIの太郎に「今のを覚えて」と指示しました。会話から記憶すべき情報を1つ選び、次のJSONだけを出力してください（説明や前置きは不要）:
+{{"kind": "correction", "wrong": "誤変換された語", "right": "正しい語", "confirm": "覚えたよ！で始まる確認の一言"}}
+
+kindの種類:
+- "correction": 音声認識の誤変換の訂正（wrongとrightを入れる）
+- "glossary": 用語・固有名詞の意味（wrongの代わりに "term" と "desc" を入れる）
+- "status": 配信者の近況（"text" に内容）
+- "joke": 定番ネタ・合言葉（"text" に内容）
+- "none": 何を覚えるべきか不明
+
+confirmには「覚えたよ！」で始めて、何をどう覚えたかを具体的に短く言うこと。"""
+
+        raw = self.comment_gen._call_gemini_raw(prompt)
+        data = self._parse_json(raw)
+        profile_mgr = getattr(self.comment_gen, '_profile_manager', None)
+
+        if not data or not profile_mgr or data.get('kind') in (None, 'none'):
+            self._send_priority("ごめん、何を覚えればいいか分からなかった。もう一回教えてくれる？")
+            return
+
+        kind = data.get('kind')
+        saved = False
+        if kind == 'correction' and data.get('wrong') and data.get('right'):
+            prev = profile_mgr.get_corrections().get(data['wrong'])
+            profile_mgr.add_correction(data['wrong'], data['right'])
+            self._last_memory = ('correction', data['wrong'], prev)
+            # 訂正はその場で耳にも反映（次の発言から効く）
+            try:
+                self.audio.set_corrections(profile_mgr.get_corrections())
+            except Exception:
+                pass
+            saved = True
+        elif kind == 'glossary' and data.get('term'):
+            prev = profile_mgr._profile.get('glossary', {}).get(data['term'])
+            profile_mgr.add_glossary_term(data['term'], data.get('desc', ''))
+            self._last_memory = ('glossary', data['term'], prev)
+            saved = True
+        elif kind == 'status' and data.get('text'):
+            profile_mgr.add_streamer_status(data['text'])
+            self._last_memory = ('status', data['text'], None)
+            saved = True
+        elif kind == 'joke' and data.get('text'):
+            profile_mgr.add_joke(data['text'])
+            self._last_memory = ('joke', data['text'], None)
+            saved = True
+
+        if not saved:
+            self._send_priority("ごめん、何を覚えればいいか分からなかった。もう一回教えてくれる？")
+            return
+
+        profile_mgr.save()
+        confirm = (data.get('confirm') or "").strip()
+        if (not confirm or len(confirm) > 100
+                or self.comment_gen._contains_ng_word(confirm)):
+            confirm = "覚えたよ！手帳にメモしておいた！"
+        logger.info(f"[覚えて] {kind}として記録: {self._last_memory[1]}")
+        self._send_priority(confirm)
+
+    def _handle_forget(self):
+        """直前に覚えた内容を取り消す"""
+        profile_mgr = getattr(self.comment_gen, '_profile_manager', None)
+        if not self._last_memory or not profile_mgr:
+            self._send_priority("あれ、取り消すものが見当たらないよ？")
+            return
+        kind, key, prev = self._last_memory
+        if kind == 'viewer_name':
+            profile_mgr._profile.setdefault('viewer_names', {})[key] = prev or "未設定"
+        elif kind == 'correction':
+            corrections = profile_mgr._profile.setdefault('corrections', {})
+            if prev:
+                corrections[key] = prev
+            else:
+                corrections.pop(key, None)
+            try:
+                self.audio.set_corrections(profile_mgr.get_corrections())
+            except Exception:
+                pass
+        elif kind == 'glossary':
+            glossary = profile_mgr._profile.setdefault('glossary', {})
+            if prev:
+                glossary[key] = prev
+            else:
+                glossary.pop(key, None)
+        elif kind == 'status':
+            profile_mgr._profile['streamer_status'] = [
+                s for s in profile_mgr._profile.get('streamer_status', [])
+                if s.get('text') != key]
+        elif kind == 'joke':
+            profile_mgr._profile['jokes'] = [
+                j for j in profile_mgr._profile.get('jokes', []) if j != key]
+        profile_mgr.save()
+        logger.info(f"[取り消し] {kind}: {key}")
+        self._last_memory = None
+        self._send_priority("了解、さっきのは取り消しておいたよ！")
 
     def on_silence(self):
         """無言が続いたときの話しかけ（文脈レーンの仲間）"""
@@ -335,10 +595,15 @@ class LaneManager:
     def tick(self):
         """メインループから毎秒呼ばれる。会話の切れ目を検知して
         文脈メモからコメントを生成する。"""
+        now = time.time()
+
+        # v4.50: 取材の回答待ちタイムアウト（静かに引っ込める）
+        if self._interview and now > self._interview['until']:
+            logger.info(f"[取材] {self._interview['display']}さんからの回答なし。今回は見送ります")
+            self._interview = None
+
         if not self.has_pending_context():
             return
-
-        now = time.time()
 
         # 生成失敗後のリトライ待ち
         if now < self._next_context_attempt:

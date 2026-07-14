@@ -23,6 +23,7 @@ MAX_TOPICS = 60          # 保持する話題の最大数（v4.20: 20→60に拡
 MAX_JOKES = 15           # 定番ネタの最大数
 MAX_STATUS = 10          # 配信者の近況の最大数
 MAX_GLOSSARY = 60        # 固有名詞辞書の最大数
+MAX_CORRECTIONS = 40     # 訂正辞書（誤変換→正しい語）の最大数
 MAX_VIEWER_NOTES = 5     # 視聴者1人あたりのメモ最大数
 BASE_MAX_CHARS = 500     # 常時貼る基本ページの上限文字数
 PAGES_MAX_CHARS = 600    # 関連ページの上限文字数
@@ -51,6 +52,7 @@ class ProfileManager:
             "viewer_names": {},
             "known_viewers": {},     # {username: {count, samples, notes, last_seen}}
             "glossary": {},          # {"固有名詞": "ひとこと説明"}
+            "corrections": {},       # {"誤変換された語": "正しい語"}（v4.43）
             "jokes": [],             # ["定番ネタ・合言葉"]
             "recent_topics": [],
             "last_updated": ""
@@ -161,6 +163,26 @@ class ProfileManager:
             oldest = next(iter(glossary))
             del glossary[oldest]
 
+    def add_correction(self, wrong: str, right: str):
+        """訂正辞書に「誤変換→正しい語」のペアを追加する（v4.43）。
+        次回配信から音声認識の結果に自動適用され、同じ誤変換が直る。"""
+        if not wrong or not right:
+            return
+        wrong, right = wrong.strip(), right.strip()
+        if wrong == right or len(wrong) < 2 or len(wrong) > 20 or len(right) > 20:
+            return
+        corrections = self._profile.setdefault('corrections', {})
+        if corrections.get(wrong) != right:
+            logger.info(f"[手帳] 訂正を記録: 「{wrong}」→「{right}」")
+        corrections[wrong] = right
+        while len(corrections) > MAX_CORRECTIONS:
+            oldest = next(iter(corrections))
+            del corrections[oldest]
+
+    def get_corrections(self) -> dict:
+        """訂正辞書を返す（v4.43・音声認識の補正用）"""
+        return dict(self._profile.get('corrections', {}))
+
     def add_joke(self, joke: str):
         """お決まりネタ・内輪ノリを追加する（v4.20）"""
         if not joke or len(joke) < 3:
@@ -186,8 +208,8 @@ class ProfileManager:
         if len(notes) > MAX_VIEWER_NOTES:
             viewers[username]['notes'] = notes[-MAX_VIEWER_NOTES:]
 
-    def add_viewer_comment(self, username: str, content: str):
-        """視聴者のコメントを記録する"""
+    def add_viewer_comment(self, username: str, content: str, display_name: str = ""):
+        """視聴者のコメントを記録する（v4.50: Twitch表示名も保存）"""
         if not username or not content or len(content) < 2:
             return
         viewers = self._profile.setdefault('known_viewers', {})
@@ -196,6 +218,8 @@ class ProfileManager:
         viewers[username].setdefault('notes', [])
         viewers[username]['count'] += 1
         viewers[username]['last_seen'] = time.strftime('%Y-%m-%d')
+        if display_name and display_name != username:
+            viewers[username]['display'] = display_name
         samples = viewers[username].setdefault('samples', [])
         if content not in samples:
             samples.append(content[:30])
@@ -220,11 +244,25 @@ class ProfileManager:
     # ============================================================
 
     def _display_name(self, username: str) -> str:
-        """ユーザー名から呼び名を引く（未設定ならユーザー名のまま）"""
+        """ユーザー名から呼び方を引く（v4.50: 手帳の呼び名→Twitch表示名→ID）"""
         display = self._profile.get('viewer_names', {}).get(username)
-        if display is None or display == "未設定":
-            return username
-        return display[0] if isinstance(display, list) else display
+        if display is not None and display != "未設定":
+            return display[0] if isinstance(display, list) else display
+        # Twitch表示名（例: petil_momokira → 桃煌ぺてぃる）
+        twitch_display = self._profile.get('known_viewers', {}).get(username, {}).get('display')
+        if twitch_display:
+            return twitch_display
+        return username
+
+    def set_viewer_name(self, username: str, name: str) -> str:
+        """視聴者の呼び名を設定する（v4.50・取材の結果を保存）。
+        Returns: 変更前の値（取り消し用）"""
+        viewer_names = self._profile.setdefault('viewer_names', {})
+        prev = viewer_names.get(username, "未設定")
+        viewer_names[username] = name
+        logger.info(f"[手帳] 呼び名を記録: {username} = {name}")
+        self.save()
+        return prev
 
     def get_prompt_text(self) -> str:
         """常時貼る「基本ページ」を返す（システムプロンプト用・安定情報のみ）"""
@@ -325,6 +363,8 @@ class ProfileManager:
         固有名詞辞書＋設定済みの呼び名＋最近の仲間から作る。"""
         terms = []
         terms.extend(list(self._profile.get('glossary', {}).keys()))
+        # 訂正辞書の「正しい語」も耳のヒントに（そもそも誤認しにくくする・v4.43）
+        terms.extend(list(self._profile.get('corrections', {}).values()))
         for username, display in self._profile.get('viewer_names', {}).items():
             if display is None or display == "未設定":
                 continue
@@ -377,6 +417,9 @@ class ProfileManager:
 - topics: 主要な話題のリスト（5〜20文字で簡潔に）
 - viewer_notes: 視聴者について分かったこと。{{"ユーザー名": "一言メモ"}} 形式（例: {{"turbo35gtr": "PS配信派"}}）
 - glossary: 会話に出たゲーム用語・固有名詞。{{"語": "ひとこと説明"}} 形式（一般的な言葉は除く）
+- corrections: 音声認識の誤変換が訂正された箇所。{{"誤変換された語": "正しい語"}} 形式
+  （例: 「5変換じゃなくて誤変換だよ」という発言があれば {{"5変換": "誤変換"}}。
+  　訂正の発言が明確にあった場合のみ。推測では入れないこと）
 - jokes: この配信の定番ネタ・お決まりの言い回しのリスト
 - streamer_status: 配信者本人の近況（体調・予定・買い物など）のリスト
 
@@ -397,6 +440,8 @@ JSONのみ出力。分からない項目は空のリスト・空のオブジェ�
                         self.add_viewer_note(username, note)
                     for term, desc in (data.get('glossary', {}) or {}).items():
                         self.add_glossary_term(term, desc)
+                    for wrong, right in (data.get('corrections', {}) or {}).items():
+                        self.add_correction(wrong, right)
                     for joke in data.get('jokes', []) or []:
                         self.add_joke(joke)
                     for status in data.get('streamer_status', []) or []:

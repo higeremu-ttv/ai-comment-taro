@@ -90,6 +90,42 @@ class OpenAICompatClient:
             return None
 
 
+def gemini_search_answer(api_key: str, model: str, system_prompt: str,
+                         question: str, timeout: float = 25.0) -> Optional[str]:
+    """Google検索グラウンディング付きでGeminiに回答させる（v4.50）。
+
+    旧SDK（google-generativeai）が検索ツール未対応のため、REST APIを直接呼ぶ。
+    失敗したらNone（呼び出し側が通常会話に退避する）。
+    """
+    if not api_key or not model:
+        return None
+    try:
+        import requests
+
+        url = (f"https://generativelanguage.googleapis.com/v1beta/models/"
+               f"{model}:generateContent?key={api_key}")
+        payload = {
+            "systemInstruction": {"parts": [{"text": system_prompt or ""}]},
+            "contents": [{"parts": [{"text": question}]}],
+            "tools": [{"google_search": {}}],
+            "generationConfig": {"temperature": 0.7, "maxOutputTokens": 2048},
+        }
+        resp = requests.post(url, json=payload, timeout=timeout)
+        if resp.status_code != 200:
+            logger.warning(f"検索グラウンディング エラー: HTTP {resp.status_code} {resp.text[:200]}")
+            return None
+        data = resp.json()
+        cands = data.get("candidates", [])
+        if not cands:
+            return None
+        parts = (cands[0].get("content", {}) or {}).get("parts", [])
+        text = "".join(p.get("text", "") for p in parts).strip()
+        return text or None
+    except Exception as e:
+        logger.warning(f"検索グラウンディング失敗: {e}")
+        return None
+
+
 def build_smart_client(config) -> Optional[OpenAICompatClient]:
     """configの設定から会話用の外部AIクライアントを作る。
     SMART_PROVIDER が "openai" のときだけ返す（それ以外はNone＝Geminiを使う）。"""
