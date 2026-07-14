@@ -286,11 +286,14 @@ class CommentGenerator:
                 self._external_client_cached = None
         return self._external_client_cached
 
-    def _call_gemini(self, prompt: str, smart: bool = False) -> Optional[str]:
+    def _call_gemini(self, prompt: str, smart: bool = False,
+                     require_ending: bool = True) -> Optional[str]:
         """AIを呼び出す。
 
         v4.30: smart=True で会話用の上位モデル（GEMINI_MODEL_SMART）を使う。
         v4.40: SMART_PROVIDER="openai" なら会話をOpenAI互換の外部AIに出す。
+        v4.42: require_ending=False で尻切れ検問を免除（俳句・謎かけ用。
+               句点で終わらないのが正しい出力のため）
         どの経路でも失敗時は相槌用のGemini Liteに退避するので、コメントは止まらない。
         """
         lite_model = getattr(self.config, 'GEMINI_MODEL', 'gemini-2.5-flash-lite')
@@ -304,29 +307,34 @@ class CommentGenerator:
                     self.get_system_prompt(), prompt,
                     max_tokens=getattr(self.config, 'COMMENT_MAX_TOKENS', 300),
                 )
-                comment = self._postprocess_comment(raw) if raw else None
+                comment = self._postprocess_comment(raw, require_ending) if raw else None
                 if comment is not None:
                     return comment
                 logger.warning(f"外部AI({external.model})での生成に失敗。{lite_model}に退避します")
-                return self._call_gemini_once(prompt, model_name=lite_model)
+                return self._call_gemini_once(prompt, model_name=lite_model,
+                                              require_ending=require_ending)
 
             # v4.30: Geminiの上位モデル
             if smart_model != lite_model:
-                result = self._call_gemini_once(prompt, model_name=smart_model)
+                result = self._call_gemini_once(prompt, model_name=smart_model,
+                                                require_ending=require_ending)
                 if result is not None:
                     return result
                 logger.warning(f"会話用モデル({smart_model})での生成に失敗。{lite_model}に退避します")
-                return self._call_gemini_once(prompt, model_name=lite_model)
+                return self._call_gemini_once(prompt, model_name=lite_model,
+                                              require_ending=require_ending)
 
         for attempt in range(2):
-            result = self._call_gemini_once(prompt, model_name=lite_model)
+            result = self._call_gemini_once(prompt, model_name=lite_model,
+                                            require_ending=require_ending)
             if result is not None:
                 return result
             if attempt == 0:
                 logger.debug("1回目の生成が短すぎたか失敗。再試行します...")
         return None
 
-    def _call_gemini_once(self, prompt: str, model_name: str = "") -> Optional[str]:
+    def _call_gemini_once(self, prompt: str, model_name: str = "",
+                          require_ending: bool = True) -> Optional[str]:
         """Gemini APIを1回呼び出す。"""
         try:
             model = self._get_gemini_model(model_name)
@@ -345,7 +353,7 @@ class CommentGenerator:
                 return None
 
             # v4.40: 検査・整形は共通部品（外部AIと同じチェックを通す）
-            return self._postprocess_comment(response.text)
+            return self._postprocess_comment(response.text, require_ending)
 
         except Exception as e:
             error_str = str(e)
@@ -358,10 +366,50 @@ class CommentGenerator:
         finally:
             self.is_generating = False
 
-    def _postprocess_comment(self, raw: str) -> Optional[str]:
+    def _call_gemini_raw(self, prompt: str, model_name: str = "") -> Optional[str]:
+        """整形・検査なしでAIの出力をそのまま返す（v4.50・情報抽出用）。
+        取材の答えから呼び名を抜く・「覚えて」の内容抽出などの事務作業用。
+        既定は相槌用のLite（事務作業に高いモデルは不要）。"""
+        try:
+            model = self._get_gemini_model(model_name)
+            if model is None:
+                return None
+            now = time.time()
+            self.api_request_times = [t for t in self.api_request_times if now - t < 60]
+            self.api_request_times.append(now)
+            response = model.generate_content(prompt)
+            if not response or not response.text:
+                return None
+            return response.text.strip()
+        except Exception as e:
+            logger.debug(f"抽出用の生成に失敗: {e}")
+            return None
+
+    def generate_search_answer(self, question: str) -> Optional[str]:
+        """Google検索して答える（v4.50・検索機能の復活）。
+        失敗したらNone（呼び出し側が通常会話に退避する）。"""
+        try:
+            from llm_client import gemini_search_answer
+        except ImportError:
+            return None
+        api_key = getattr(self.config, 'GEMINI_API_KEY', '')
+        model = (getattr(self.config, 'GEMINI_MODEL_SMART', '')
+                 or getattr(self.config, 'GEMINI_MODEL', 'gemini-2.5-flash'))
+        system_prompt = (self.get_system_prompt()
+                         + "\n※今回はGoogle検索の結果を根拠に、正確な情報を2〜3文で伝えること。"
+                           "検索で分からなかったことは知ったかぶりせず「見つからなかった」と言うこと。")
+        raw = gemini_search_answer(api_key, model, system_prompt, question)
+        comment = self._postprocess_comment(raw) if raw else None
+        if comment:
+            self._record_comment(comment)
+            logger.info(f"[検索回答] {comment}")
+        return comment
+
+    def _postprocess_comment(self, raw: str, require_ending: bool = True) -> Optional[str]:
         """AIの生の出力を検査・整形する（v4.40で共通部品化）。
         Geminiでも外部AIでも、同じ品質チェック（日本語・長さ・NGワード・
-        プロンプト漏れ）を通ってからコメントになる。"""
+        プロンプト漏れ）を通ってからコメントになる。
+        v4.42: require_ending=False で尻切れ検問を免除（俳句・謎かけ用）"""
         if not raw:
             return None
 
@@ -388,10 +436,12 @@ class CommentGenerator:
         # 尻切れチェック（v4.41）: 文の途中で切れた返答を破棄する
         # 思考型モデルが予算切れで途中終了した場合の保険。破棄すれば
         # 呼び出し側が自動でLiteに退避するので、尻切れ文が配信に出ることはない
-        valid_endings = tuple('。．！？!?…♪〜～」』）)ｗw草')
-        if not comment.endswith(valid_endings):
-            logger.warning(f"[尻切れ検出] 文が完結していないため破棄: '...{comment[-20:]}'")
-            return None
+        # v4.42: 俳句・謎かけは句点なしで終わるのが正しいため require_ending=False で免除
+        if require_ending:
+            valid_endings = tuple('。．！？!?…♪〜～」』）)ｗw草')
+            if not comment.endswith(valid_endings):
+                logger.warning(f"[尻切れ検出] 文が完結していないため破棄: '...{comment[-20:]}'")
+                return None
 
         # 生成されたコメントにNGワードが含まれていたら破棄
         if self._contains_ng_word(comment):
@@ -471,6 +521,11 @@ class CommentGenerator:
         "【現在のゲーム画面】",
         "これまでの会話の流れ",
         "自然な友達口調",
+        # v4.51: 俳句イベントで実際に漏れたAIの注釈（「※これは例であり、
+        # 実際にはこの俳句を投稿しません」）を検出するマーカー
+        "※これは",
+        "これは例",
+        "投稿しません",
     ]
 
     def _looks_like_prompt_leak(self, text: str) -> bool:

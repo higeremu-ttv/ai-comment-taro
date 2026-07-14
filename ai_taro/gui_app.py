@@ -31,7 +31,7 @@ class QueueHandler(logging.Handler):
 class BotGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("AIコメント太郎 v4.41")
+        self.root.title("AIコメント太郎 v4.51")
         self.root.geometry("820x660")
         self.root.resizable(True, True)
         self.root.configure(bg="#1a1a2e")
@@ -126,7 +126,7 @@ class BotGUI:
         header = tk.Frame(self.root, bg=self.colors["bg"], pady=10)
         header.pack(fill="x", padx=16)
 
-        tk.Label(header, text="🎮  AIコメント太郎  v4.41",
+        tk.Label(header, text="🎮  AIコメント太郎  v4.51",
                  bg=self.colors["bg"], fg=self.colors["text"],
                  font=("Yu Gothic UI", 16, "bold")).pack(side="left")
 
@@ -738,7 +738,7 @@ class BotGUI:
 
             logger = logging.getLogger("gui_bot")
             logger.info("=" * 50)
-            logger.info("AIコメント太郎 v4.41 を起動します（尻切れ対策済み）")
+            logger.info("AIコメント太郎 v4.51 を起動します（取材・記憶・検索）")
             logger.info(f"チャンネル: #{config.CHANNEL_NAME}")
             _engine = getattr(config, 'SPEECH_ENGINE', 'whisper')
             _engine_label = f"faster-whisper {getattr(config, 'WHISPER_MODEL_SIZE', 'medium')}（ローカル）" if _engine == 'whisper' else "Google Web Speech API"
@@ -759,9 +759,11 @@ class BotGUI:
             audio.set_config(config)  # NGワード前段階フィルター用
 
             # v4.20: 手帳の固有名詞辞書をWhisperの認識ヒントに流す
+            # v4.43: 訂正辞書（誤変換→正しい語）も耳に適用する
             try:
                 if comment_gen._profile_manager:
                     audio.set_extra_vocabulary(comment_gen._profile_manager.get_whisper_terms())
+                    audio.set_corrections(comment_gen._profile_manager.get_corrections())
             except Exception:
                 pass
             self.bot_instance = {
@@ -814,111 +816,60 @@ class BotGUI:
             next_event_interval = random.randint(15 * 60, 25 * 60)
             last_event_time = [time.time()]
             used_event_words = []  # 今日の配信で使った単語リスト
+            posted_haikus = []     # v4.51: 今日投稿した俳句（同じ句の連投防止）
             logger.info(f"[イベント] 次まで {next_event_interval // 60} 分")
 
             def _call_gemini_lite(prompt: str) -> str:
                 """俳句・謎かけ用に生成する。
                 v4.30: 上位モデル（GEMINI_MODEL_SMART）を使用。
-                5・7・5の音節数えはFlash-Liteには荷が重かったため"""
-                result = comment_gen._call_gemini(prompt, smart=True)
+                v4.42: 俳句は句点で終わらないのが正しいため尻切れ検問を免除"""
+                result = comment_gen._call_gemini(prompt, smart=False, require_ending=False)
                 return result or ""
 
-            def _build_event_context() -> tuple:
-                """イベント用の会話履歴とゲーム情報を返す"""
-                history = comment_gen._conversation_history[-20:] if comment_gen._conversation_history else []
-                stream_info = getattr(comment_gen, '_stream_info', {})
-                game_name = stream_info.get('game_name', '')
-                game_text = f"配信中のゲーム：{game_name}\n" if game_name else ""
-                if history:
-                    history_text = "\n".join([
-                        f"{'配信者' if m.get('role') == 'streamer' else ('視聴者' if m.get('role') == 'viewer' else '太郎')}: {m.get('content', '')}"
-                        for m in history
-                    ])
-                else:
-                    history_text = ""
-                return history_text, game_text
-
             def _do_haiku_event():
-                """俳句イベント"""
-                history_text, game_text = _build_event_context()
-                stream_info = getattr(comment_gen, '_stream_info', {})
-                title_words = [w for w in (stream_info.get('title', '') or '').replace('　', ' ').split() if len(w) >= 2]
-                all_avoid = list(set(used_event_words + title_words))
-                avoid_text = f"・次の言葉は絶対に使わないこと（{', '.join(all_avoid)}）\n" if all_avoid else ""
-                if history_text:
-                    prompt = (
-                        f"あなたはTwitch配信の常連視聴者「コメント太郎」です。\n"
-                        f"{game_text}"
-                        f"今日の配信の雰囲気：\n{history_text}\n\n"
-                        f"上記をヒントに俳句を一句作ってください。\n"
-                        f"【厳守】5・7・5の音節を必ず守ること。声に出して音節を数えてから出力すること。\n"
-                        f"・会話を全部詰め込まなくていい。雰囲気や感情だけ拾えれば十分\n"
-                        f"・ありきたりな表現を避けること\n"
-                        f"・季語がなくてもOK\n"
-                        f"{avoid_text}"
-                        f"・俳句の本文のみ出力（説明・コメント不要）"
-                    )
-                else:
-                    prompt = (
-                        f"あなたはTwitch配信の常連視聴者「コメント太郎」です。\n"
-                        f"{game_text}"
-                        f"今この瞬間の気持ちを俳句にしてください。\n"
-                        f"【厳守】5・7・5の音節を必ず守ること。声に出して音節を数えてから出力すること。\n"
-                        f"・ありきたりな表現を避け、独自の言葉を使うこと\n"
-                        f"・季語がなくてもOK\n"
-                        f"{avoid_text}"
-                        f"・俳句の本文のみ出力（説明・コメント不要）"
-                    )
+                """俳句イベント（v4.50: Lite・配信内容と関連付けない省エネ版）"""
+                avoid_text = f"・次の言葉は使わないこと（{', '.join(used_event_words[-15:])}）\n" if used_event_words else ""
+                prompt = (
+                    "あなたはTwitchのゲーム配信を見ている常連視聴者「コメント太郎」です。\n"
+                    "配信の雰囲気に合う俳句を自由に一句詠んでください。\n"
+                    "【厳守】5・7・5の音節を必ず守ること。\n"
+                    "・ゲーム・配信・季節など題材は自由\n"
+                    f"{avoid_text}"
+                    "・俳句の本文のみ出力（説明・コメント不要）"
+                )
                 haiku = _call_gemini_lite(prompt)
                 if haiku and self.bot_running:
                     haiku = haiku.replace('\n', '　')
+                    # v4.51: 同じ句の連投防止（同日中に投稿済みならスキップ）
+                    normalized = haiku.replace('　', '').replace(' ', '')
+                    if normalized in posted_haikus:
+                        logger.info(f"[俳句] 同じ句のため投稿をスキップ: {haiku}")
+                        return
+                    posted_haikus.append(normalized)
                     message = f"ここで一句。「{haiku}」"
                     logger.info(f"[俳句] {message}")
                     twitch.send_comment(message)
                     self.log_queue.put(f"COMMENT:{message}")
-                    # 使った単語を記録（2文字以上の名詞的な単語）
                     words = [w for w in haiku.replace('　', ' ').split() if len(w) >= 2]
                     used_event_words.extend(words)
 
             def _do_nazokake_event():
-                """謎かけイベント"""
-                history_text, game_text = _build_event_context()
-                stream_info = getattr(comment_gen, '_stream_info', {})
-                title_words = [w for w in (stream_info.get('title', '') or '').replace('　', ' ').split() if len(w) >= 2]
-                all_avoid = list(set(used_event_words + title_words))
-                avoid_text = f"・次の言葉は絶対に使わないこと（{', '.join(all_avoid)}）\n" if all_avoid else ""
-                if history_text:
-                    prompt = (
-                        f"あなたはTwitch配信の常連視聴者「コメント太郎」です。\n"
-                        f"{game_text}"
-                        f"今日の配信の雰囲気（参考程度）：\n{history_text}\n\n"
-                        f"謎かけを一つ作ってください。会話に引っ張られすぎず、面白さ・意外性を最優先にすること。\n"
-                        f"形式：「○○とかけて△△と解く、その心は／□□」\n"
-                        f"・「／」で前半と後半を必ず区切ること\n"
-                        f"・答え（その心は）は意外性があり、思わず笑えるひねりを効かせること\n"
-                        f"・「どちらも〜」という当たり前の答えは絶対禁止\n"
-                        f"・配信の会話はあくまで参考。無理に拾わなくていい\n"
-                        f"{avoid_text}"
-                        f"・謎かけ本文のみ出力（説明不要）"
-                    )
-                else:
-                    prompt = (
-                        f"あなたはTwitch配信の常連視聴者「コメント太郎」です。\n"
-                        f"{game_text}"
-                        f"謎かけを一つ作ってください。面白さ・意外性を最優先にすること。\n"
-                        f"形式：「○○とかけて△△と解く、その心は／□□」\n"
-                        f"・「／」で前半と後半を必ず区切ること\n"
-                        f"・答え（その心は）は意外性があり、思わず笑えるひねりを効かせること\n"
-                        f"・「どちらも〜」という当たり前の答えは絶対禁止\n"
-                        f"{avoid_text}"
-                        f"・謎かけ本文のみ出力（説明不要）"
-                    )
+                """謎かけイベント（v4.50: Lite・配信内容と関連付けない省エネ版）"""
+                avoid_text = f"・次の言葉は使わないこと（{', '.join(used_event_words[-15:])}）\n" if used_event_words else ""
+                prompt = (
+                    "あなたはTwitchのゲーム配信を見ている常連視聴者「コメント太郎」です。\n"
+                    "謎かけを一つ作ってください。面白さ・意外性を最優先にすること。\n"
+                    "形式：「○○とかけて△△と解く、その心は／□□」\n"
+                    "・「／」で前半と後半を必ず区切ること\n"
+                    "・「どちらも〜」という当たり前の答えは絶対禁止\n"
+                    f"{avoid_text}"
+                    "・謎かけ本文のみ出力（説明不要）"
+                )
                 result = _call_gemini_lite(prompt)
                 if result and '／' in result and self.bot_running:
                     parts = result.strip().split('／', 1)
                     first = parts[0].strip()
                     second = parts[1].strip() if len(parts) > 1 else ""
-                    # 「その心は」が含まれていたら除去（送信側で付ける）
                     first = first.replace('、その心は', '').replace('その心は', '').strip()
                     if first and second:
                         msg1 = f"謎かけいきます。「{first}、その心は」"
@@ -930,7 +881,6 @@ class BotGUI:
                         logger.info(f"[謎かけ後半] {msg2}")
                         twitch.send_comment_priority(msg2)
                         self.log_queue.put(f"COMMENT:{msg2}")
-                        # 使った単語を記録
                         all_text = first + " " + second
                         words = [w for w in all_text.replace('、', ' ').replace('。', ' ').split() if len(w) >= 2]
                         used_event_words.extend(words)
@@ -962,7 +912,8 @@ class BotGUI:
 
                 # イベントタイマーチェック
                 now = time.time()
-                if now - last_event_time[0] >= next_event_interval:
+                if (getattr(config, 'EVENTS_ENABLED', True)
+                        and now - last_event_time[0] >= next_event_interval):
                     try:
                         event_func = random.choice(event_list)
                         event_func()
