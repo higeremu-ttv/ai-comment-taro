@@ -287,3 +287,11 @@ GIMMICK_ANNOUNCER_ACCOUNTS = "nightbot"
 GIMMICK_DELAY_MIN = 5
 GIMMICK_DELAY_MAX = 30
 
+# 音声トリガーのギミック（v4.54）: 配信者の発言にトリガー語が含まれたら、
+# 対応する単語を投稿する。書式: トリガー語=投稿単語 をカンマ区切りで複数可。空で無効
+# 例: "ビクロイ=gg,勝った=gg"
+SPEECH_GIMMICKS = "ビクロイ=gg"
+
+# 同じ単語を再投稿するまでの最短間隔（秒）。誤認識・繰り返しで連発しないための保険
+SPEECH_GIMMICK_COOLDOWN = 120
+

@@ -724,6 +724,32 @@ cfg_g.GIMMICK_ENABLED = False
 check("機能OFFなら検知しない",
       tm.check_gimmick("nightbot", "「行進」と入力するとスタンプが行進します") is None)
 
+# ============================================================
+# v4.54 音声トリガーのギミック（ビクロイ→gg）のテスト
+# ============================================================
+cfg_sg = FakeConfig()
+cfg_sg.SPEECH_GIMMICKS = "ビクロイ=gg"
+cfg_sg.SPEECH_GIMMICK_COOLDOWN = 120
+gen_sg = CommentGenerator(cfg_sg)
+twitch_sg = FakeTwitch()
+lanes_sg = LaneManager(cfg_sg, gen_sg, twitch_sg, FakeAudio())
+
+lanes_sg.on_speech("よし、ビクロイ取れたよ！")
+check("「ビクロイ」を聞いたらggを投稿", any(m == "gg" for m, _ in twitch_sg.sent))
+lanes_sg.on_speech("またビクロイだ！")
+check("クールダウン中は連発しない", [m for m, _ in twitch_sg.sent].count("gg") == 1)
+
+twitch_sg.sent.clear()
+lanes_sg._speech_gimmick_times.clear()
+lanes_sg.on_speech("ビクロイ取れなかったー")
+check("否定的な文では出さない", not any(m == "gg" for m, _ in twitch_sg.sent))
+lanes_sg.on_speech("今日は普通の話をしています")
+check("トリガー語がなければ何もしない", not any(m == "gg" for m, _ in twitch_sg.sent))
+
+lanes_sg._speech_gimmick_times.clear()
+lanes_sg.on_speech("見事にビクロイ、素晴らしい！")
+check("クールダウンが明ければまた出せる", any(m == "gg" for m, _ in twitch_sg.sent))
+
 print()
 ok = sum(1 for _, c in results if c)
 print(f"===== 結果: {ok}/{len(results)} 件成功 =====")

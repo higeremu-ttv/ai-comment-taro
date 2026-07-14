@@ -31,7 +31,7 @@ class QueueHandler(logging.Handler):
 class BotGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("AIコメント太郎 v4.53")
+        self.root.title("AIコメント太郎 v4.54")
         self.root.geometry("820x660")
         self.root.resizable(True, True)
         self.root.configure(bg="#1a1a2e")
@@ -126,7 +126,7 @@ class BotGUI:
         header = tk.Frame(self.root, bg=self.colors["bg"], pady=10)
         header.pack(fill="x", padx=16)
 
-        tk.Label(header, text="🎮  AIコメント太郎  v4.53",
+        tk.Label(header, text="🎮  AIコメント太郎  v4.54",
                  bg=self.colors["bg"], fg=self.colors["text"],
                  font=("Yu Gothic UI", 16, "bold")).pack(side="left")
 
@@ -325,6 +325,7 @@ class BotGUI:
         self.var_reaction_bot_accounts = tk.StringVar()
         self.var_gimmick_enabled = tk.BooleanVar()
         self.var_gimmick_words = tk.StringVar()
+        self.var_speech_gimmicks = tk.StringVar()
         self.var_chat_threshold = tk.StringVar()
         self.var_chat_window = tk.StringVar()
         self.var_chat_quiet = tk.StringVar()
@@ -481,6 +482,8 @@ class BotGUI:
         ).pack(side="left")
         make_field(sec4, "参加するギミック単語", self.var_gimmick_words)
         make_note(sec4, "告知にこの単語があると太郎がその単語だけを投稿。例: 行進,ランダム,おなかすいた")
+        make_field(sec4, "音声トリガーのギミック", self.var_speech_gimmicks)
+        make_note(sec4, "配信者の発言に反応して単語を投稿。書式: 聞いた語=投稿する語。例: ビクロイ=gg")
 
         # 視聴者コマンド設定
         sec_cmd = make_section("視聴者コマンド設定", color="#ffd93d")
@@ -567,6 +570,7 @@ class BotGUI:
             self.var_reaction_bot_accounts.set(getattr(cfg, "REACTION_BOT_ACCOUNTS", "nightbot,streamelements"))
             self.var_gimmick_enabled.set(getattr(cfg, "GIMMICK_ENABLED", True))
             self.var_gimmick_words.set(getattr(cfg, "GIMMICK_WORDS", "行進,ランダム,おなかすいた"))
+            self.var_speech_gimmicks.set(getattr(cfg, "SPEECH_GIMMICKS", "ビクロイ=gg"))
             self.var_chat_threshold.set(str(getattr(cfg, "CHAT_ACTIVITY_THRESHOLD", "3")))
             self.var_chat_window.set(str(getattr(cfg, "CHAT_ACTIVITY_WINDOW_SECONDS", "60")))
             self.var_chat_quiet.set(str(getattr(cfg, "CHAT_QUIET_RESUME_SECONDS", "30")))
@@ -637,6 +641,8 @@ class BotGUI:
                                     str(self.var_gimmick_enabled.get()), is_string=False)
             content = replace_value(content, "GIMMICK_WORDS",
                                     self.var_gimmick_words.get())
+            content = replace_value(content, "SPEECH_GIMMICKS",
+                                    self.var_speech_gimmicks.get())
             content = replace_value(content, "CHAT_ACTIVITY_THRESHOLD",
                                     self.var_chat_threshold.get(), is_string=False)
             content = replace_value(content, "CHAT_ACTIVITY_WINDOW_SECONDS",
@@ -760,7 +766,7 @@ class BotGUI:
 
             logger = logging.getLogger("gui_bot")
             logger.info("=" * 50)
-            logger.info("AIコメント太郎 v4.53 を起動します（ギミック参加）")
+            logger.info("AIコメント太郎 v4.54 を起動します（ギミック参加）")
             logger.info(f"チャンネル: #{config.CHANNEL_NAME}")
             _engine = getattr(config, 'SPEECH_ENGINE', 'whisper')
             _engine_label = f"faster-whisper {getattr(config, 'WHISPER_MODEL_SIZE', 'medium')}（ローカル）" if _engine == 'whisper' else "Google Web Speech API"

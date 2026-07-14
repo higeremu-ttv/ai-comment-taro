@@ -76,6 +76,9 @@ class LaneManager:
         # 「覚えて」コマンド（v4.50: 直前に覚えた内容。取り消し用）
         self._last_memory = None         # (kind, key, prev_value)
 
+        # 音声トリガーのギミック（v4.54: 「ビクロイ」を聞いたら「gg」等）
+        self._speech_gimmick_times = {}  # {投稿単語: 最後に投稿した時刻}
+
     # ============================================================
     # 共通部品
     # ============================================================
@@ -170,8 +173,35 @@ class LaneManager:
     # 入力の受け口（振り分け役）
     # ============================================================
 
+    def _check_speech_gimmick(self, text: str):
+        """v4.54: 配信者の発言にトリガー語（例: ビクロイ）が含まれていたら、
+        対応するギミック単語（例: gg）を投稿する。AIを呼ばないのでコストゼロ。
+        誤認識や繰り返しで連発しないよう、単語ごとにクールダウンを持つ。"""
+        raw = getattr(self.config, 'SPEECH_GIMMICKS', '')
+        if not raw or not text:
+            return
+        # 「取れなかった」等の否定的な文では出さない（間違ったggは白ける）
+        negatives = ("ない", "なかった", "れず", "逃し", "負け", "惜し")
+        now = time.time()
+        for pair in raw.split(','):
+            if '=' not in pair:
+                continue
+            trigger, word = (s.strip() for s in pair.split('=', 1))
+            if not trigger or not word or trigger not in text:
+                continue
+            if any(n in text for n in negatives):
+                logger.info(f"[音声ギミック] 「{trigger}」を検知したが否定的な文のため見送り: {text[:30]}")
+                continue
+            cooldown = float(getattr(self.config, 'SPEECH_GIMMICK_COOLDOWN', 120))
+            if now - self._speech_gimmick_times.get(word, 0.0) < cooldown:
+                continue
+            self._speech_gimmick_times[word] = now
+            logger.info(f"[音声ギミック] 「{trigger}」を検知 → 「{word}」を投稿")
+            self._send_normal(word)
+
     def on_speech(self, text: str):
         """音声認識結果を受け取り、レーンに振り分ける"""
+        self._check_speech_gimmick(text)  # v4.54: ビクロイ→gg 等
         is_direct, question = self._detect_direct_call(text)
         now = time.time()
 
