@@ -456,6 +456,18 @@ class CommentGenerator:
                 logger.warning(f"[尻切れ検出] 文が完結していないため破棄: '...{comment[-20:]}'")
                 return None
 
+        # v4.55: 冒頭の呼びかけ名を除去（「おじさん、〜」で始めるのは禁止ルールだが
+        # 指示だけでは漏れるため、機械的に取り除く）
+        streamer_name = getattr(self.config, 'STREAMER_NAME', '')
+        if streamer_name:
+            stripped = re.sub(rf'^{re.escape(streamer_name)}\s*[、，,]\s*', '', comment)
+            if stripped != comment:
+                if len(stripped) >= 10:
+                    comment = stripped
+                else:
+                    logger.warning(f"[冒頭名検問] 名前を除くと短すぎるため破棄: '{comment}'")
+                    return None
+
         # 生成されたコメントにNGワードが含まれていたら破棄
         if self._contains_ng_word(comment):
             return None
@@ -464,7 +476,28 @@ class CommentGenerator:
         if self._looks_like_prompt_leak(comment):
             return None
 
+        # v4.55: 聞き返しオウム検問。音声認識が崩れた単語を引用して「〜って何？」と
+        # 聞き返すコメントを破棄する（7/17配信で10回以上発生。プロンプトの指示では
+        # 直らなかったため機械的に止める。破棄すれば呼び出し側が再生成する）
+        if self._looks_like_parrot_question(comment):
+            return None
+
         return comment
+
+    # 聞き返しオウムのパターン（v4.55）
+    # 1. 「◯◯」って何？ / 「◯◯」ってどういうこと？（かぎ括弧で引用して聞き返す）
+    # 2. カタカナ4文字以上の（たいてい誤認識の）単語＋って何？
+    PARROT_QUESTION_PATTERNS = [
+        r'「[^」]{2,30}」\s*って、?\s*(何|なに|一体|どういうこと)',
+        r'[ァ-ヴー・]{4,}\s*って、?\s*何(？|\?|だろう|かな|なんだ)',
+    ]
+
+    def _looks_like_parrot_question(self, comment: str) -> bool:
+        for pat in self.PARROT_QUESTION_PATTERNS:
+            if re.search(pat, comment):
+                logger.warning(f"[聞き返し検問] 崩れた単語への聞き返しのため破棄: '{comment[:40]}'")
+                return True
+        return False
 
     def _record_comment(self, comment: str):
         self._last_comments.append(comment)

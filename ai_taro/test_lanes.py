@@ -750,6 +750,31 @@ lanes_sg._speech_gimmick_times.clear()
 lanes_sg.on_speech("見事にビクロイ、素晴らしい！")
 check("クールダウンが明ければまた出せる", any(m == "gg" for m, _ in twitch_sg.sent))
 
+# ============================================================
+# v4.55 聞き返しオウム検問・冒頭名検問のテスト（7/17配信の実例から）
+# ============================================================
+gen10 = CommentGenerator(cfg)
+
+check("カタカナ語＋って何？を破棄（実例1）",
+      gen10._postprocess_comment("え、トリアーゼロクロックって何？なんか新しい技とか出るのかな。") is None)
+check("カタカナ語＋って何？を破棄（実例2）",
+      gen10._postprocess_comment("スライカーポンプって何？　なんか新しいゲーム用語かな、俺も勉強しないとだめだね！") is None)
+check("かぎ括弧引用＋って何を破棄（実例3）",
+      gen10._postprocess_comment("「アイアバス」って何かのアイテム名かな？　なんか響きが面白くて気になるよ。") is None)
+check("かぎ括弧引用＋どういうことを破棄",
+      gen10._postprocess_comment("「おしだけめったうち」って、どういうこと？敵が隠れてたのかな？") is None)
+check("普通の感想コメントは通す",
+      gen10._postprocess_comment("そのアイテムの使い方、初めて見たかも。勉強になるなあ。") is not None)
+check("引用しない普通の質問は通す",
+      gen10._postprocess_comment("敵はどっちから来たの？結構危なかったよね。") is not None)
+
+check("冒頭の「ひげさん、」を取り除く",
+      gen10._postprocess_comment("ひげさん、今日のプレイは冴えてるね！最高だったよ。")
+      == "今日のプレイは冴えてるね！最高だったよ。")
+check("文中の名前はそのまま",
+      gen10._postprocess_comment("今日のひげさん、なんだか調子良さそうだね！")
+      == "今日のひげさん、なんだか調子良さそうだね！")
+
 print()
 ok = sum(1 for _, c in results if c)
 print(f"===== 結果: {ok}/{len(results)} 件成功 =====")
