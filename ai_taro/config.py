@@ -109,10 +109,11 @@ SPEECH_PAUSE_THRESHOLD = 2.0
 # whisperの初期化に失敗した場合は自動でgoogleにフォールバックします
 SPEECH_ENGINE = "whisper"
 
-# Whisperモデルサイズ: tiny / base / small / medium / large-v3
+# Whisperモデルサイズ: tiny / base / small / medium / large-v3 / large-v3-turbo
 # RTX 4080 SUPERなら medium 推奨（VRAM約2.5GB・ゲームと同居可）
 # さらに精度が欲しければ large-v3（VRAM約5GB）
-WHISPER_MODEL_SIZE = "medium"
+# v4.56: large-v3-turboに変更（精度と速度の両立を狙い実配信で試験中。聞き取りが悪化したらmediumに戻す）
+WHISPER_MODEL_SIZE = "large-v3-turbo"
 
 # 使用デバイス: "auto"（CUDA→CPUの順で自動選択） / "cuda" / "cpu"
 WHISPER_DEVICE = "auto"
