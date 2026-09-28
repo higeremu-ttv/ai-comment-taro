@@ -1034,6 +1034,80 @@ check("既定の声はTARO_VOICE定数と一致",
       taro_client.models.calls[0]["config"].speech_config.voice_config
       .prebuilt_voice_config.voice_name == gtts.TARO_VOICE)
 
+# ============================================================
+# v4.57 読み上げパイプライン（reading_pipeline）のテスト
+# 外の世界（VOICEVOX/Gemini）は全部フェイク関数で差し替える
+# ============================================================
+import reading_pipeline as rp
+
+check("日本語（かな）を検出", rp.detect_language("こんにちは") == "ja")
+check("日本語（漢字のみ）を検出", rp.detect_language("配信中") == "ja")
+check("英語を検出", rp.detect_language("hello there") == "en")
+check("記号や数字だけは英語扱い", rp.detect_language("!!! 123") == "en")
+check("日英混在は日本語扱い（仕様どおり）", rp.detect_language("nice play だね") == "ja")
+
+_rp_dict = rd._seed_dictionary()
+_rp_excl = re_mod._seed_exclusions()
+
+
+def _fake_vv_ok(text, **kwargs):
+    return f"VV:{text}".encode()
+
+
+def _fake_vv_none(text, **kwargs):
+    return None
+
+
+def _fake_gemini_ok(text, **kwargs):
+    return f"GEMINI:{text}".encode()
+
+
+def _fake_gemini_fail(text, **kwargs):
+    return None
+
+
+check("除外ユーザーは読まない",
+      rp.read_comment("higeremu_tr", "こんにちは", gemini_api_key="x",
+                       dictionary_data=_rp_dict, exclusions_data=_rp_excl,
+                       voicevox_synthesize=_fake_vv_ok, gemini_synthesize=_fake_gemini_ok)
+      is None)
+
+check("日本語コメントはVOICEVOXで読む",
+      rp.read_comment("viewer1", "こんにちは", gemini_api_key="x",
+                       dictionary_data=_rp_dict, exclusions_data=_rp_excl,
+                       voicevox_synthesize=_fake_vv_ok, gemini_synthesize=_fake_gemini_ok)
+      == "VV:こんにちは".encode())
+
+check("英語コメントはGemini TTSで読む",
+      rp.read_comment("viewer1", "hello world", gemini_api_key="x",
+                       dictionary_data=_rp_dict, exclusions_data=_rp_excl,
+                       voicevox_synthesize=_fake_vv_ok, gemini_synthesize=_fake_gemini_ok)
+      == b"GEMINI:hello world")
+
+check("英語でGeminiが落ちたらVOICEVOXにフォールバック（決定事項）",
+      rp.read_comment("viewer1", "hello world", gemini_api_key="x",
+                       dictionary_data=_rp_dict, exclusions_data=_rp_excl,
+                       voicevox_synthesize=_fake_vv_ok, gemini_synthesize=_fake_gemini_fail)
+      == b"VV:hello world")
+
+check("辞書を通してから読む（草→くさ）",
+      rp.read_comment("viewer1", "草", gemini_api_key="x",
+                       dictionary_data=_rp_dict, exclusions_data=_rp_excl,
+                       voicevox_synthesize=_fake_vv_ok, gemini_synthesize=_fake_gemini_ok)
+      == "VV:くさ".encode())
+
+check("辞書適用後に空になったら読まない",
+      rp.read_comment("viewer1", "", gemini_api_key="x",
+                       dictionary_data=_rp_dict, exclusions_data=_rp_excl,
+                       voicevox_synthesize=_fake_vv_ok, gemini_synthesize=_fake_gemini_ok)
+      is None)
+
+check("VOICEVOXも落ちていれば全体としてNone",
+      rp.read_comment("viewer1", "こんにちは", gemini_api_key="x",
+                       dictionary_data=_rp_dict, exclusions_data=_rp_excl,
+                       voicevox_synthesize=_fake_vv_none, gemini_synthesize=_fake_gemini_ok)
+      is None)
+
 print()
 ok = sum(1 for _, c in results if c)
 print(f"===== 結果: {ok}/{len(results)} 件成功 =====")
