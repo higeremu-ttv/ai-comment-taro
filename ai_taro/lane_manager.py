@@ -79,6 +79,69 @@ class LaneManager:
         # 音声トリガーのギミック（v4.54: 「ビクロイ」を聞いたら「gg」等）
         self._speech_gimmick_times = {}  # {投稿単語: 最後に投稿した時刻}
 
+        # VCモード（v4.59: ゲーム内VCの声を2本目の耳で聞く）
+        # VCの発言は手帳（会話履歴→配信後の学習）には入れない。仲間の話を手帳に覚えないため。
+        from collections import deque
+        self._vc_memo = deque(maxlen=8)  # 直近のVCの発言（返事の文脈用・一時的）
+        self._vc_toggle = None           # 切り替え関数 on(bool)->成功したか（gui_appから設定）
+        self._last_vc_reply = 0.0
+
+    # ============================================================
+    # VCモード（v4.59）
+    # ============================================================
+    VC_WORDS = ("vc", "ｖｃ", "ブイシー", "ボイチャ", "ボイスチャット", "ブイチャ")
+    VC_OFF_WORDS = ("いいよ", "大丈夫", "聞かなくて", "聞かないで", "やめて", "止めて", "オフ", "終わり", "もういい")
+    VC_ON_WORDS = ("聞いて", "聴いて", "聞いといて", "聞いておいて", "拾って", "入れて", "オン")
+
+    def set_vc_toggle(self, fn: Callable):
+        self._vc_toggle = fn
+
+    def _detect_vc_command(self, text: str):
+        """「太郎、VC聞いて」→True / 「太郎、VCはいいよ」→False / それ以外→None"""
+        low = text.lower()
+        if not any(w in low for w in self.VC_WORDS):
+            return None
+        if any(w in text for w in self.VC_OFF_WORDS):
+            return False
+        if any(w in text for w in self.VC_ON_WORDS):
+            return True
+        return None
+
+    def _handle_vc_command(self, on: bool):
+        if self._vc_toggle is None:
+            return
+        ok = self._vc_toggle(on)
+        if not getattr(self.config, 'VC_ANNOUNCE', True):
+            return
+        if on:
+            msg = "了解、VCも聞いとくね！" if ok else "VCの音が見つからなかった…出力先の設定を見てみて"
+        else:
+            msg = "了解、VCはもう聞かないね"
+        self._send_priority(msg)
+
+    def on_vc_speech(self, text: str):
+        """VCで聞き取れた発言。呼ばれたときだけ返事し、それ以外は一時メモに置くだけ（割り込まない）"""
+        logger.info(f"[VC] {text}")
+        recent = "／".join(self._vc_memo)
+        self._vc_memo.append(text)
+        ai_name = getattr(self.config, 'AI_NAME', '太郎')
+        if not (ai_name in text or '太郎' in text):
+            return
+        now = time.time()
+        if now - self._last_vc_reply < getattr(self.config, 'VC_REPLY_COOLDOWN', 20):
+            logger.info("[VC] 呼ばれたが、直前に返事したばかりなので見送り")
+            return
+        context = f"直前のVCの会話：{recent}。" if recent else ""
+        prompt = (f"配信者がゲームのボイスチャットで一緒に遊んでいる仲間（誰かは分からない）が、"
+                  f"あなた（{ai_name}）に「{text}」と話しかけました。{context}"
+                  f"配信を見ている視聴者の{ai_name}として、チャットで自然に1文で返事してください。"
+                  f"仲間の名前は分からないので呼ばないこと。日本語のみ。")
+        comment = self.comment_gen._call_gemini(prompt, smart=getattr(self.config, 'MENTION_USE_SMART', True))
+        if comment:
+            self._last_vc_reply = now
+            logger.info(f"[VC呼びかけ反応] {text} → {comment}")
+            self._send_priority(comment)
+
     # ============================================================
     # 共通部品
     # ============================================================
@@ -221,6 +284,13 @@ class LaneManager:
                 logger.info(f"[{ai_name}呼びかけ] {q}")
             else:
                 logger.info(f"[会話モード] 続きの発言として応答: {text[:30]}")
+
+            # v4.59: VCモードの切り替え（「太郎、VC聞いて」「太郎、VCはいいよ」）
+            vc_cmd = self._detect_vc_command(q)
+            if vc_cmd is not None and self._vc_toggle is not None:
+                logger.info(f"[VC] 声の命令: {'聞く' if vc_cmd else '聞かない'}")
+                self._handle_vc_command(vc_cmd)
+                return
 
             # v4.50: 特殊コマンドの判定（取り消し → 覚えて → 検索 の順）
             forget_triggers = [t for t in getattr(self.config, 'FORGET_TRIGGERS',

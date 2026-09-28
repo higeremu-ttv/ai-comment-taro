@@ -295,7 +295,20 @@ class AudioModule:
 
         raw = audio.get_raw_data(convert_rate=16000, convert_width=2)
         samples = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
+        return self.transcribe_samples(samples)
 
+    def transcribe_samples(self, samples) -> str:
+        """16kHz・モノラル・float32 の音声をテキスト化する。
+        v4.59: マイク以外（VCの声）からも同じWhisperモデルを使い回すための入口。
+        2つのスレッドから同時に使ってぶつからないよう、鍵をかけて1つずつ処理する"""
+        if not hasattr(self, "_whisper_lock"):
+            self._whisper_lock = threading.Lock()
+        if getattr(self, "_whisper_model", None) is None:
+            return ""
+        with self._whisper_lock:
+            return self._transcribe_locked(samples)
+
+    def _transcribe_locked(self, samples) -> str:
         initial_prompt = getattr(
             self.config, 'WHISPER_INITIAL_PROMPT',
             "Twitchのゲーム配信。太郎、コメント太郎、フォートナイト、ビクロイ、などの言葉が出ます。"

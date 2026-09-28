@@ -31,7 +31,7 @@ class QueueHandler(logging.Handler):
 class BotGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("AIコメント太郎 v4.58")
+        self.root.title("AIコメント太郎 v4.59")
         self.root.geometry("820x660")
         self.root.resizable(True, True)
         self.root.configure(bg="#1a1a2e")
@@ -126,7 +126,7 @@ class BotGUI:
         header = tk.Frame(self.root, bg=self.colors["bg"], pady=10)
         header.pack(fill="x", padx=16)
 
-        tk.Label(header, text="🎮  AIコメント太郎  v4.58",
+        tk.Label(header, text="🎮  AIコメント太郎  v4.59",
                  bg=self.colors["bg"], fg=self.colors["text"],
                  font=("Yu Gothic UI", 16, "bold")).pack(side="left")
 
@@ -217,6 +217,23 @@ class BotGUI:
             command=self.run_read_aloud_test
         )
         self.read_test_btn.pack(side="left", padx=(0, 8))
+
+        # v4.59: VCモード（2段目）。太郎を起動中だけ押せる。起動時は必ずオフ
+        vc_frame = tk.Frame(parent, bg=self.colors["bg"])
+        vc_frame.pack(fill="x", padx=8, pady=(0, 6))
+        self.vc_btn = tk.Button(
+            vc_frame, text="🎧 VCを聞く",
+            bg=self.colors["border"], fg=self.colors["text_dim"],
+            font=("Yu Gothic UI", 10),
+            relief="flat", bd=0, padx=12, pady=6,
+            cursor="hand2", state="disabled",
+            command=self.toggle_vc
+        )
+        self.vc_btn.pack(side="left", padx=(0, 8))
+        self.vc_label = tk.Label(
+            vc_frame, text="VC: オフ（声でも切替:「太郎、VC聞いて」「太郎、VCはいいよ」）",
+            bg=self.colors["bg"], fg=self.colors["text_dim"], font=("Yu Gothic UI", 9))
+        self.vc_label.pack(side="left")
 
         # 会話ステート表示
         state_frame = tk.Frame(parent, bg=self.colors["panel"], pady=4)
@@ -836,7 +853,7 @@ class BotGUI:
                 return
 
             logger.info("=" * 50)
-            logger.info("AIコメント太郎 v4.58 を起動します（太郎の声の口調漏れを修正）")
+            logger.info("AIコメント太郎 v4.59 を起動します（VCモード）")
             logger.info(f"チャンネル: #{config.CHANNEL_NAME}")
             _engine = getattr(config, 'SPEECH_ENGINE', 'whisper')
             _engine_label = f"faster-whisper {getattr(config, 'WHISPER_MODEL_SIZE', 'medium')}（ローカル）" if _engine == 'whisper' else "Google Web Speech API"
@@ -924,6 +941,17 @@ class BotGUI:
 
             logger.info("音声認識を開始します...")
             audio.start()
+
+            # v4.59: VCモード（2本目の耳）。用意だけして、聞き始めるのはボタンか声の命令で
+            try:
+                from vc_listener import VCListener
+                vc = VCListener(config, audio.transcribe_samples, lanes.on_vc_speech)
+                self.bot_instance["vc"] = vc
+                lanes.set_vc_toggle(self._set_vc)
+                self.root.after(0, self._update_vc_ui)
+                logger.info(f"VCモード: 準備OK（オフ。出力先「{vc.device_name}」を聞きます）")
+            except Exception as e:
+                logger.warning(f"VCモードを用意できませんでした: {e}")
 
             logger.info("bot が稼働中です。停止ボタンで停止します。")
 
@@ -1048,6 +1076,41 @@ class BotGUI:
             self._cleanup_bot()
 
     # ------------------------------------------------------------
+    # v4.59: VCモード
+    # ------------------------------------------------------------
+    def toggle_vc(self):
+        vc = (self.bot_instance or {}).get("vc") if self.bot_running else None
+        if vc is None:
+            self._append_log("VCモードは「▶ 太郎＋読み上げ」か「▶ 太郎だけ」で起動中に使えます", "WARNING")
+            return
+        self.vc_btn.config(state="disabled")
+        threading.Thread(target=lambda: self._set_vc(not vc.listening), daemon=True).start()
+
+    def _set_vc(self, on: bool) -> bool:
+        """VCを聞く／聞かない。ボタン・声の命令の両方から呼ばれる（別スレッドから呼んでよい）"""
+        vc = (self.bot_instance or {}).get("vc")
+        ok = bool(vc and vc.set_listening(on))
+        self.root.after(0, self._update_vc_ui)
+        return ok
+
+    def _update_vc_ui(self):
+        vc = (self.bot_instance or {}).get("vc") if self.bot_running else None
+        if vc is None:
+            self.vc_btn.config(state="disabled", text="🎧 VCを聞く", bg=self.colors["border"],
+                               fg=self.colors["text_dim"])
+            self.vc_label.config(text="VC: オフ（声でも切替:「太郎、VC聞いて」「太郎、VCはいいよ」）",
+                                 fg=self.colors["text_dim"])
+        elif vc.listening:
+            self.vc_btn.config(state="normal", text="🎧 VCを聞くのをやめる", bg=self.colors["success"],
+                               fg="white")
+            self.vc_label.config(text="● VC: 聞いています（呼ばれたときだけ返事します）", fg=self.colors["success"])
+        else:
+            self.vc_btn.config(state="normal", text="🎧 VCを聞く", bg=self.colors["border"],
+                               fg=self.colors["text"])
+            self.vc_label.config(text="VC: オフ（声でも切替:「太郎、VC聞いて」「太郎、VCはいいよ」）",
+                                 fg=self.colors["text_dim"])
+
+    # ------------------------------------------------------------
     # v4.58: 読み上げテスト（OBSの音量合わせ用）
     # ------------------------------------------------------------
     READ_TEST_VIEWER = ("読み上げテスト", "読み上げのテストです。この声は配信に聞こえていますか？")
@@ -1115,7 +1178,7 @@ class BotGUI:
         Twitchの受信と読み上げ係だけを起動する。太郎はチャットに一切投稿しない。
         _run_bot の try の中から呼ばれるので、終了時の後片付け（_cleanup_bot）はそちらで行われる"""
         logger.info("=" * 50)
-        logger.info("AIコメント太郎 v4.58 を「読み上げだけ」で起動します")
+        logger.info("AIコメント太郎 v4.59 を「読み上げだけ」で起動します")
         logger.info("（AIのコメント・マイクの聞き取り・俳句/謎かけ・ギミック参加は動かしません）")
         logger.info(f"チャンネル: #{config.CHANNEL_NAME}")
         logger.info("=" * 50)
@@ -1170,6 +1233,12 @@ class BotGUI:
                 self.bot_instance["twitch"].stop()
             except Exception:
                 pass
+            # v4.59: VCを聞くのをやめる
+            try:
+                if self.bot_instance.get("vc"):
+                    self.bot_instance["vc"].stop()
+            except Exception:
+                pass
             # v4.57: 読み上げ係と、太郎が起動したVOICEVOXエンジンを止める
             try:
                 if self.bot_instance.get("read_aloud"):
@@ -1184,6 +1253,7 @@ class BotGUI:
     def _update_ui_stopped(self):
         for btn in self.start_btns.values():
             btn.config(state="normal", bg=self.colors["accent"], fg="white")
+        self._update_vc_ui()
         self.stop_btn.config(state="disabled", bg=self.colors["border"],
                              fg=self.colors["text_dim"])
         self.status_badge.config(text="● 停止中", fg=self.colors["danger"])

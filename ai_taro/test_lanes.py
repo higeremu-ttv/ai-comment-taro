@@ -1382,6 +1382,97 @@ check("起動中の読み上げテスト: 動いている読み上げ係に視�
 check("読み上げテスト: 終わったらボタンが押せる状態に戻る", _ts.read_test_btn.state == "normal")
 check("読み上げテスト: 終わったことを画面の記録に出す", any("終わりました" in m for m in _logs))
 
+# ============================================================
+# v4.59 VCモードのテスト（本物の音・Whisper・Geminiは使わない）
+# ============================================================
+import vc_listener as vcl
+
+_u = vcl.Utterance(threshold=0.01, end_silence_sec=0.3, min_voiced_sec=0.2, max_sec=2.0)
+_sil = _np.zeros(1600, dtype=_np.float32)
+_loud = (_np.ones(1600, dtype=_np.float32) * 0.1)
+check("VC区切り: 静かなままなら何も返さない", all(_u.feed(_sil) is None for _ in range(10)))
+_res = [_u.feed(b) for b in [_loud] * 5 + [_sil] * 3]
+check("VC区切り: 話して静かになったら1発言として返す",
+      _res[-1] is not None and len(_res[-1]) == 1600 * 8 and all(r is None for r in _res[:-1]))
+_res2 = [_u.feed(b) for b in [_loud] + [_sil] * 3]
+check("VC区切り: 短すぎる物音は発言にしない", all(r is None for r in _res2))
+_res3 = [_u.feed(_loud) for _ in range(20)]
+check("VC区切り: 長すぎる発言は途中で区切る（最大2秒）", _res3[19] is not None)
+
+
+class _FakeRecorder:
+    def __init__(self, blocks):
+        self.blocks = list(blocks)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def record(self, numframes):
+        if self.blocks:
+            return self.blocks.pop(0).reshape(-1, 1)
+        time.sleep(0.02)
+        return _np.zeros((numframes, 1), dtype=_np.float32)
+
+
+class _FakeDev:
+    name = "Voice Chat (テスト)"
+
+    def __init__(self, blocks):
+        self._blocks = blocks
+
+    def recorder(self, samplerate, channels):
+        return _FakeRecorder(self._blocks)
+
+
+_vc_texts = []
+_vc_cfg = _types.SimpleNamespace(VC_DEVICE_NAME="Voice Chat", VC_MIN_CHARS=4,
+                                 VC_ENERGY_THRESHOLD=0.01, VC_END_SILENCE_SECONDS=0.3)
+_vc = vcl.VCListener(_vc_cfg, transcribe=lambda a: "太郎、今の見た？すごくない？",
+                     on_text=_vc_texts.append,
+                     device_finder=lambda n: _FakeDev([_loud] * 6 + [_sil] * 4))
+check("VC: 聞き始められる", _vc.set_listening(True) is True and _vc.listening)
+for _ in range(50):
+    if _vc_texts:
+        break
+    time.sleep(0.05)
+check("VC: 横取りした声を文字にして渡す", _vc_texts[:1] == ["太郎、今の見た？すごくない？"])
+check("VC: 止められる", _vc.set_listening(False) is True and not _vc.listening)
+_vc_none = vcl.VCListener(_vc_cfg, transcribe=lambda a: "", on_text=lambda t: None,
+                          device_finder=lambda n: None)
+check("VC: 出力先が見つからなければ聞き始めない", _vc_none.set_listening(True) is False and not _vc_none.listening)
+
+# 頭脳（lane_manager）側
+cfg_vc = FakeConfig()
+gen_vc = CommentGenerator(cfg_vc)
+_vc_prompts = []
+gen_vc._call_gemini = lambda p, **kw: _vc_prompts.append(p) or "え、俺のこと呼んだ？見てたよ！"
+tw_vc = FakeTwitch()
+lanes_vc = LaneManager(cfg_vc, gen_vc, tw_vc, FakeAudio())
+check("VC命令: 「VC聞いて」→聞く", lanes_vc._detect_vc_command("VC聞いて") is True)
+check("VC命令: 「ボイチャはいいよ」→聞かない", lanes_vc._detect_vc_command("ボイチャはいいよ") is False)
+check("VC命令: 「vc聞かなくていいよ」→聞かない", lanes_vc._detect_vc_command("vc聞かなくていいよ") is False)
+check("VC命令: VCと言っていなければ命令ではない", lanes_vc._detect_vc_command("これ聞いて") is None)
+
+lanes_vc.on_vc_speech("ナイス、今の撃ち合い勝ったね")
+check("VC: 呼ばれていなければ返事しない（割り込まない）", tw_vc.sent == [] and _vc_prompts == [])
+check("VC: 呼ばれていない発言も一時メモには残す", list(lanes_vc._vc_memo) == ["ナイス、今の撃ち合い勝ったね"])
+lanes_vc.on_vc_speech("太郎って見てるの？")
+check("VC: 太郎と呼ばれたら返事する", tw_vc.sent == [("え、俺のこと呼んだ？見てたよ！", True)])
+check("VC: 返事には直前のVCの会話が添えられる", "撃ち合い勝った" in _vc_prompts[0])
+check("VC: 仲間の発言は手帳（会話履歴）に入れない",
+      not any("撃ち合い" in str(m) for m in gen_vc._conversation_history))
+lanes_vc.on_vc_speech("太郎、聞こえてる？")
+check("VC: 返事した直後にまた呼ばれても連続では返さない", len(tw_vc.sent) == 1)
+
+_toggles = []
+lanes_vc.set_vc_toggle(lambda on: _toggles.append(on) or True)
+lanes_vc.on_speech(f"{cfg_vc.AI_NAME}、VC聞いて")
+check("VC命令: 声で「太郎、VC聞いて」→切り替えが呼ばれる", _toggles == [True])
+check("VC命令: 切り替えたらチャットで了解と返す", tw_vc.sent[-1][0].startswith("了解、VCも聞いとくね"))
+
 # 起動ボタンの種類 → 設定値
 _m = _types.SimpleNamespace(TARO_AI_ENABLED=True, READ_ALOUD_ENABLED=False)
 _gui.BotGUI._apply_run_mode(_m, "hybrid")
