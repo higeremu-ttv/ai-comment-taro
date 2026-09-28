@@ -54,6 +54,33 @@ class TwitchModule:
         """視聴者コメントを受け取った時に呼ぶコールバックを設定する"""
         self._viewer_comment_callback = callback
 
+    def set_read_aloud_worker(self, worker):
+        """v4.57: 読み上げ係（read_aloud.ReadAloudWorker）を設定する。Noneなら読み上げない"""
+        self._read_aloud_worker = worker
+
+    def read_aloud(self, username: str, content: str, emote_names=None):
+        """v4.57: 読み上げ係にコメントを渡す（すぐ戻る。合成・再生は読み上げ係のスレッド）"""
+        worker = getattr(self, '_read_aloud_worker', None)
+        if worker is not None and content:
+            worker.enqueue_comment(username, content, emote_names)
+
+    @staticmethod
+    def extract_emote_names(content: str, tags) -> list:
+        """v4.57: Twitchのemotesタグ（例 '25:0-4,12-16/1902:6-10'）からエモート名を取り出す"""
+        try:
+            raw = (tags or {}).get('emotes') or ''
+            names = set()
+            for group in raw.split('/'):
+                if ':' not in group:
+                    continue
+                _, positions = group.split(':', 1)
+                for pos in positions.split(','):
+                    start, end = pos.split('-')
+                    names.add(content[int(start):int(end) + 1])
+            return list(names)
+        except Exception:
+            return []
+
     def _parse_reaction_bot_accounts(self) -> set:
         """反応するボットアカウントリストをセットに変換"""
         raw = getattr(self.config, 'REACTION_BOT_ACCOUNTS', '')
@@ -274,6 +301,10 @@ class TwitchModule:
                         gimmick_word = twitch_module_ref.check_gimmick(username, content)
                         if gimmick_word:
                             twitch_module_ref.schedule_gimmick(gimmick_word)
+                        # v4.57: 読み上げ（除外リストの判定は読み上げ係の中で行う）
+                        twitch_module_ref.read_aloud(
+                            username, content,
+                            twitch_module_ref.extract_emote_names(content, getattr(message, 'tags', None)))
                         # コメントを記録（除外アカウントは内部でフィルタ）
                         twitch_module_ref.record_chat_message(username)
                         logger.debug(f"他の視聴者コメント受信: {username}: {content}")
@@ -407,6 +438,9 @@ class TwitchModule:
                             fail_count = 0
                             self._last_send_time_ref[0] = time.time()
                             logger.info(f"コメント送信: {message}")
+                            # v4.57: 太郎の投稿も読み上げる（今のTTAも読んでいるため同じ動きにする。
+                            # Twitchは自分の投稿を受信側に返さないので、送信成功時にここで渡す）
+                            twitch_module_ref.read_aloud(config.BOT_NICK, message)
 
                             # 送信後の短い待機（連続送信防止）
                             await asyncio.sleep(1)

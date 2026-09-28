@@ -271,6 +271,25 @@ VIEWER_COMMENT_REACTION_ENABLED = True
 REACTION_BOT_ACCOUNTS = "streamelements,frostytools"
 
 # ============================================================
+# 読み上げ（v4.57: 棒読みちゃん・TwitchTalkAppの代わりに太郎が読む）
+# ============================================================
+# オンにすると、視聴者コメントを太郎が読み上げる（日本語=VOICEVOX、英語=Gemini TTS）。
+# TwitchTalkApp・棒読みちゃんと同時にオンにすると二重に読まれるので、どちらか片方だけにする。
+READ_ALOUD_ENABLED = False
+
+# VOICEVOXエンジン（画面なし）の場所。太郎が起動・終了に合わせて動かす
+VOICEVOX_ENGINE_PATH = os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "VOICEVOX", "vv-engine", "run.exe")
+
+# 英語コメントを読むGemini TTSの声（2026-09-29 おじさんが5つ聞き比べて Puck を選んだ）
+READ_ALOUD_ENGLISH_VOICE = "Puck"
+
+# 日本語はこの文字数を超えたら「以下略」（棒読みちゃんの今の設定と同じ30。0で切らない）
+READ_ALOUD_MAX_CHARS_JA = 30
+
+# 読み上げ待ちがこの件数を超えたら、新しいコメントは読まずに捨てる（荒らし・大量コメント対策）
+READ_ALOUD_MAX_QUEUE = 50
+
+# ============================================================
 # ギミック参加設定（v4.53）
 # ============================================================
 # ボット告知にギミック単語が含まれていたら、太郎が少し間を置いて

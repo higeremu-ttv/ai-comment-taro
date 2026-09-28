@@ -31,7 +31,7 @@ class QueueHandler(logging.Handler):
 class BotGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("AIコメント太郎 v4.56")
+        self.root.title("AIコメント太郎 v4.57")
         self.root.geometry("820x660")
         self.root.resizable(True, True)
         self.root.configure(bg="#1a1a2e")
@@ -126,7 +126,7 @@ class BotGUI:
         header = tk.Frame(self.root, bg=self.colors["bg"], pady=10)
         header.pack(fill="x", padx=16)
 
-        tk.Label(header, text="🎮  AIコメント太郎  v4.56",
+        tk.Label(header, text="🎮  AIコメント太郎  v4.57",
                  bg=self.colors["bg"], fg=self.colors["text"],
                  font=("Yu Gothic UI", 16, "bold")).pack(side="left")
 
@@ -323,6 +323,7 @@ class BotGUI:
         self.var_chat_mute_enabled = tk.BooleanVar()
         self.var_viewer_comment_reaction_enabled = tk.BooleanVar()
         self.var_reaction_bot_accounts = tk.StringVar()
+        self.var_read_aloud_enabled = tk.BooleanVar()  # v4.57
         self.var_gimmick_enabled = tk.BooleanVar()
         self.var_gimmick_words = tk.StringVar()
         self.var_speech_gimmicks = tk.StringVar()
@@ -469,6 +470,19 @@ class BotGUI:
         make_field(sec4, "反応するボットアカウント", self.var_reaction_bot_accounts)
         make_note(sec4, "お知らせ系ボットのみ指定。例: nightbot,streamelements")
 
+        # 読み上げ設定（v4.57）
+        chk_read_aloud_row = tk.Frame(sec4, bg=self.colors["panel"])
+        chk_read_aloud_row.pack(fill="x", padx=12, pady=3)
+        tk.Checkbutton(
+            chk_read_aloud_row, text="コメントを太郎が読み上げる（日本語=VOICEVOX / 英語=Gemini）",
+            variable=self.var_read_aloud_enabled,
+            bg=self.colors["panel"], fg=self.colors["text"],
+            selectcolor=self.colors["log_bg"],
+            activebackground=self.colors["panel"],
+            font=("Yu Gothic UI", 10)
+        ).pack(side="left")
+        make_note(sec4, "オンにするときは TwitchTalkApp・棒読みちゃんを起動しない（二重に読まれます）。「設定を保存」してから開始")
+
         # ギミック参加設定（v4.53）
         chk_gimmick_row = tk.Frame(sec4, bg=self.colors["panel"])
         chk_gimmick_row.pack(fill="x", padx=12, pady=3)
@@ -568,6 +582,7 @@ class BotGUI:
             self.var_chat_mute_enabled.set(getattr(cfg, "CHAT_ACTIVITY_MUTE_ENABLED", True))
             self.var_viewer_comment_reaction_enabled.set(getattr(cfg, "VIEWER_COMMENT_REACTION_ENABLED", True))
             self.var_reaction_bot_accounts.set(getattr(cfg, "REACTION_BOT_ACCOUNTS", "nightbot,streamelements"))
+            self.var_read_aloud_enabled.set(getattr(cfg, "READ_ALOUD_ENABLED", False))
             self.var_gimmick_enabled.set(getattr(cfg, "GIMMICK_ENABLED", True))
             self.var_gimmick_words.set(getattr(cfg, "GIMMICK_WORDS", "行進,ランダム,おなかすいた"))
             self.var_speech_gimmicks.set(getattr(cfg, "SPEECH_GIMMICKS", "ビクロイ=gg"))
@@ -637,6 +652,8 @@ class BotGUI:
                                     str(self.var_viewer_comment_reaction_enabled.get()), is_string=False)
             content = replace_value(content, "REACTION_BOT_ACCOUNTS",
                                     self.var_reaction_bot_accounts.get())
+            content = replace_value(content, "READ_ALOUD_ENABLED",
+                                    str(self.var_read_aloud_enabled.get()), is_string=False)
             content = replace_value(content, "GIMMICK_ENABLED",
                                     str(self.var_gimmick_enabled.get()), is_string=False)
             content = replace_value(content, "GIMMICK_WORDS",
@@ -766,7 +783,7 @@ class BotGUI:
 
             logger = logging.getLogger("gui_bot")
             logger.info("=" * 50)
-            logger.info("AIコメント太郎 v4.56 を起動します（聞き取りをlarge-v3-turboに強化）")
+            logger.info("AIコメント太郎 v4.57 を起動します（コメント読み上げを統合）")
             logger.info(f"チャンネル: #{config.CHANNEL_NAME}")
             _engine = getattr(config, 'SPEECH_ENGINE', 'whisper')
             _engine_label = f"faster-whisper {getattr(config, 'WHISPER_MODEL_SIZE', 'medium')}（ローカル）" if _engine == 'whisper' else "Google Web Speech API"
@@ -818,6 +835,20 @@ class BotGUI:
             audio.set_silence_callback(lanes.on_silence)
             twitch.set_viewer_command_callback(lanes.on_viewer_command)
             twitch.set_viewer_comment_callback(lanes.on_viewer_comment)
+
+            # v4.57: 読み上げ（棒読みちゃん・TwitchTalkAppの代わり）。オンのときだけ
+            if getattr(config, 'READ_ALOUD_ENABLED', False):
+                try:
+                    from read_aloud import ReadAloudWorker
+                    read_aloud = ReadAloudWorker(config, gemini_api_key=getattr(config, 'GEMINI_API_KEY', ''))
+                    read_aloud.start()
+                    twitch.set_read_aloud_worker(read_aloud)
+                    self.bot_instance["read_aloud"] = read_aloud
+                    logger.info("読み上げ: オン（日本語=VOICEVOX / 英語=Gemini TTS）")
+                except Exception as e:
+                    logger.warning(f"読み上げを開始できませんでした: {e}")
+            else:
+                logger.info("読み上げ: オフ（TwitchTalkApp・棒読みちゃんを使う場合はこのまま）")
 
             logger.info("Twitch接続を開始します...")
             twitch.start()
@@ -988,6 +1019,12 @@ class BotGUI:
                 pass
             try:
                 self.bot_instance["twitch"].stop()
+            except Exception:
+                pass
+            # v4.57: 読み上げ係と、太郎が起動したVOICEVOXエンジンを止める
+            try:
+                if self.bot_instance.get("read_aloud"):
+                    self.bot_instance["read_aloud"].stop()
             except Exception:
                 pass
             self.bot_instance = None

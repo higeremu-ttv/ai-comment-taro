@@ -35,10 +35,30 @@ def detect_language(text: str) -> str:
     return "en"
 
 
+def strip_emotes(text: str, emote_names, keep_words=()) -> str:
+    """
+    Twitchエモートの名前を取り除く（TTAの「エモートを読む＝オフ」に合わせる）。
+    ただし読み上げ辞書に登録された語（チャンネル絵文字 higereGg→GG 等）は残し、辞書で読ませる。
+    """
+    if not emote_names:
+        return text
+    drop = set(emote_names) - set(keep_words)
+    kept = [tok for tok in text.split() if tok not in drop]
+    return " ".join(kept)
+
+
+def truncate_japanese(text: str, max_chars: int) -> str:
+    """棒読みちゃんの今の設定（30文字を超えたら「以下略」）に合わせる。0以下なら切らない。"""
+    if max_chars and max_chars > 0 and len(text) > max_chars:
+        return text[:max_chars] + "、以下略"
+    return text
+
+
 def read_comment(username: str, text: str, gemini_api_key: str,
                   dictionary_data: dict = None, exclusions_data: dict = None,
                   voicevox_synthesize=voicevox_client.synthesize,
-                  gemini_synthesize=gemini_tts_client.synthesize):
+                  gemini_synthesize=gemini_tts_client.synthesize,
+                  emote_names=None, max_chars_ja: int = 0):
     """
     視聴者コメント1件を読み上げ音声(WAVバイト列)にする。
     読まない判定・合成失敗のときは None。
@@ -46,6 +66,8 @@ def read_comment(username: str, text: str, gemini_api_key: str,
     voicevox_synthesize / gemini_synthesize は差し替え可能（テスト用）。
     dictionary_data / exclusions_data を省略すると、その場でファイルから読み込む
     （呼び出しのたびに読み込むと非効率なので、実配線時は呼び出し側でキャッシュして渡すこと）。
+    emote_names: そのコメントに含まれるTwitchエモート名（読まずに取り除く）
+    max_chars_ja: 日本語をこの文字数で切って「以下略」（0なら切らない）
     """
     if exclusions_data is None:
         exclusions_data = reading_exclusions.load_exclusions()
@@ -54,6 +76,7 @@ def read_comment(username: str, text: str, gemini_api_key: str,
 
     if dictionary_data is None:
         dictionary_data = reading_dictionary.load_dictionary()
+    text = strip_emotes(text or "", emote_names, keep_words=dictionary_data.get("words", {}).keys())
     reading_text = reading_dictionary.apply_reading(text, dictionary_data)
     if not reading_text or not reading_text.strip():
         return None
@@ -61,7 +84,7 @@ def read_comment(username: str, text: str, gemini_api_key: str,
     lang = detect_language(reading_text)
 
     if lang == "ja":
-        return voicevox_synthesize(reading_text)
+        return voicevox_synthesize(truncate_japanese(reading_text, max_chars_ja))
 
     # 英語: Gemini TTSが基本。落ちたらVOICEVOXへフォールバック（✅決定事項）
     audio = gemini_synthesize(reading_text, api_key=gemini_api_key)

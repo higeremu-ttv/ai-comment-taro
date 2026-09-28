@@ -1108,6 +1108,83 @@ check("VOICEVOXも落ちていれば全体としてNone",
                        voicevox_synthesize=_fake_vv_none, gemini_synthesize=_fake_gemini_ok)
       is None)
 
+# ============================================================
+# v4.57 読み上げの配線（エモート除去・文字数制限・略語・読み上げ係）のテスト
+# ============================================================
+check("エモート名は読まずに取り除く",
+      rp.strip_emotes("nice Kappa play", ["Kappa"]) == "nice play")
+check("辞書にあるチャンネル絵文字は残して辞書で読ませる",
+      rp.strip_emotes("higereGg Kappa", ["higereGg", "Kappa"], keep_words=["higereGg"]) == "higereGg")
+check("エモートが無ければそのまま", rp.strip_emotes("こんにちは", None) == "こんにちは")
+check("日本語は30文字を超えたら以下略",
+      rp.truncate_japanese("あ" * 40, 30) == "あ" * 30 + "、以下略")
+check("30文字以内はそのまま", rp.truncate_japanese("こんにちは", 30) == "こんにちは")
+
+_d = rd._seed_dictionary()
+check("略語brbを言い換える", rd.apply_reading("brb guys", _d) == "be right back guys")
+check("略語は大文字でも言い換える", rd.apply_reading("NGL that was good", _d) == "not gonna lie that was good")
+check("ggはそのまま（おじさん指定）", rd.apply_reading("gg", _d) == "gg")
+check("単語の一部（eggのgg・wpを含む語）は置き換えない",
+      rd.apply_reading("egg wpx", _d) == "egg wpx")
+check("gg wp → gg well played", rd.apply_reading("gg wp", _d) == "gg well played")
+
+import twitch_module as _tm_mod
+check("Twitchのemotesタグからエモート名を取り出す",
+      sorted(_tm_mod.TwitchModule.extract_emote_names("Kappa hi Kappa Keepo",
+                                                      {"emotes": "25:0-4,9-13/1902:15-19"}))
+      == ["Kappa", "Keepo"])
+check("emotesタグが無ければ空", _tm_mod.TwitchModule.extract_emote_names("hi", {}) == [])
+
+import read_aloud as ra_mod
+
+
+class _RAConfig:
+    READ_ALOUD_MAX_QUEUE = 2
+    READ_ALOUD_MAX_CHARS_JA = 30
+    READ_ALOUD_ENGLISH_VOICE = "Puck"
+    VOICEVOX_ENGINE_PATH = ""
+
+
+_played = []
+_pipeline_calls = []
+
+
+def _fake_pipeline(username, text, **kwargs):
+    _pipeline_calls.append((username, text, kwargs))
+    return f"WAV:{text}".encode()
+
+
+_ra_dir = '/tmp/taro_test_read_aloud'
+shutil.rmtree(_ra_dir, ignore_errors=True)
+os.makedirs(_ra_dir, exist_ok=True)
+worker = ra_mod.ReadAloudWorker(_RAConfig(), gemini_api_key="x", base_dir=_ra_dir,
+                                play_func=_played.append, pipeline_func=_fake_pipeline,
+                                engine_check=lambda: True)
+worker.start()
+worker.enqueue_comment("viewer1", "こんにちは", ["Kappa"])
+worker.enqueue_wav(b"TARO-VOICE")
+for _ in range(50):
+    if len(_played) >= 2:
+        break
+    time.sleep(0.05)
+check("読み上げ係がコメントを合成して再生する", _played[:1] == ["WAV:こんにちは".encode()])
+check("合成済み音声（太郎の声）も同じ列で再生する", b"TARO-VOICE" in _played)
+check("エモート名と文字数制限が合成に渡る",
+      _pipeline_calls[0][2]["emote_names"] == ["Kappa"] and _pipeline_calls[0][2]["max_chars_ja"] == 30)
+check("英語の声は設定の値（Puck）", worker.english_voice == "Puck")
+worker.stop()
+worker.stop()
+check("停止を2回呼んでも落ちない", True)
+check("エンジンが既に動いていれば太郎は起動しない（止めもしない）", worker._engine_proc is None)
+
+# 列が詰まったら捨てる（スレッドを動かさずに確認）
+worker2 = ra_mod.ReadAloudWorker(_RAConfig(), base_dir=_ra_dir, play_func=_played.append,
+                                 pipeline_func=_fake_pipeline, engine_check=lambda: True)
+worker2.enqueue_comment("a", "1")
+worker2.enqueue_comment("b", "2")
+worker2.enqueue_comment("c", "3")
+check("読み上げ待ちが上限を超えたら新しいコメントは捨てる", worker2._queue.qsize() == 2)
+
 print()
 ok = sum(1 for _, c in results if c)
 print(f"===== 結果: {ok}/{len(results)} 件成功 =====")

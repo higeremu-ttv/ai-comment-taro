@@ -77,6 +77,13 @@ def _seed_dictionary() -> dict:
             # 並びの置き換え（正規表現）。仕様ノート §2-1 の例。
             {"pattern": r"[wｗWＷ]{2,}", "repl": "わらわら"},
             {"pattern": r"https?://\S+", "repl": "ゆーあーるえる"},
+            # 英語チャットの略語（Gemini TTSは略語のまま読むため言い換える。2026-09-29 おじさん確認）
+            # 単語単位（\b）・大文字小文字無視。gg・lol・lmao はそのまま読ませる（おじさん指定）
+            {"pattern": r"(?i)\bbrb\b", "repl": "be right back"},
+            {"pattern": r"(?i)\bngl\b", "repl": "not gonna lie"},
+            {"pattern": r"(?i)\btbh\b", "repl": "to be honest"},
+            {"pattern": r"(?i)\bomg\b", "repl": "oh my god"},
+            {"pattern": r"(?i)\bwp\b", "repl": "well played"},
         ],
     }
 
