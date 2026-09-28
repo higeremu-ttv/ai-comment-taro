@@ -37,6 +37,11 @@ logger = logging.getLogger(__name__)
 DEFAULT_MODEL = "gemini-3.8-flash-lite-tts"
 DEFAULT_VOICE = "Kore"
 
+# 太郎自身の声（§3）。VOICEVOX（視聴者コメント読み上げ）とは元々エンジンが違うので
+# 声質は自然に分かれるが、声の名前自体は 🟡 まだおじさんが聞いて決めていない仮の値。
+# 配信後に実際に聞き比べて、必要ならここを変える。
+TARO_VOICE = "Kore"
+
 
 def synthesize(text: str, api_key: str, model: str = DEFAULT_MODEL,
                voice_name: str = DEFAULT_VOICE, client=None):
@@ -83,3 +88,22 @@ def synthesize(text: str, api_key: str, model: str = DEFAULT_MODEL,
     except Exception as e:
         logger.warning(f"Gemini TTSに接続できません: {e}")
         return None
+
+
+def build_styled_text(text: str, style: str = "") -> str:
+    """
+    口調の指示を文章に含める（§3「俳句・謎かけは口調を指示」）。
+    Gemini TTSは指示を専用の項目ではなく地の文で受け取る作りのため、
+    話し方の指示を頭に付けて渡す。
+    🔍 実際に聞いてどのくらい効くかは配信後の確認事項（音を出して初めて分かるため）。
+    """
+    if not style:
+        return text
+    return f"（{style}）\n{text}"
+
+
+def speak_as_taro(text: str, api_key: str, style: str = "",
+                   model: str = DEFAULT_MODEL, voice_name: str = TARO_VOICE, client=None):
+    """太郎自身の声として読み上げる（§3）。styleは俳句・謎かけ等の口調指示。"""
+    styled = build_styled_text(text, style)
+    return synthesize(styled, api_key=api_key, model=model, voice_name=voice_name, client=client)

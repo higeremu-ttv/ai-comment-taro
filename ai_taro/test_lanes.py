@@ -1014,6 +1014,26 @@ check("声の表現力が要る場面はflash-ttsを指定できる",
                                [_FakeCandidate([_FakePart(_FakeInlineData(b"x"))])])
                        )) == b"x")
 
+# ============================================================
+# v4.57 太郎の声（speak_as_taro / build_styled_text）のテスト
+# ============================================================
+check("口調指定なしならそのまま", gtts.build_styled_text("こんにちは") == "こんにちは")
+check("口調指定があれば頭に付く",
+      gtts.build_styled_text("今日も一句", style="俳句らしく、ゆっくりと")
+      == "（俳句らしく、ゆっくりと）\n今日も一句")
+
+taro_client = _FakeGenaiClient(
+    response=_FakeGenaiResponse([_FakeCandidate([_FakePart(_FakeInlineData(b"taro-voice"))])])
+)
+check("太郎の声として合成できる",
+      gtts.speak_as_taro("今日も一句", api_key="dummy", style="俳句らしく",
+                          client=taro_client) == b"taro-voice")
+check("太郎の声には口調指示が乗った文章が渡る",
+      "（俳句らしく）" in taro_client.models.calls[0]["contents"])
+check("既定の声はTARO_VOICE定数と一致",
+      taro_client.models.calls[0]["config"].speech_config.voice_config
+      .prebuilt_voice_config.voice_name == gtts.TARO_VOICE)
+
 print()
 ok = sum(1 for _, c in results if c)
 print(f"===== 結果: {ok}/{len(results)} 件成功 =====")
