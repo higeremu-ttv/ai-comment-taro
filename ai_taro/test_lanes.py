@@ -852,6 +852,80 @@ check("保存して読み直しても内容が保たれる",
       "test_bad_bot" in [u.lower() for u in re_reloaded["excluded_users"]]
       and "wizebot" not in [u.lower() for u in re_reloaded["excluded_users"]])
 
+# ============================================================
+# v4.57 VOICEVOXクライアント（voicevox_client）のテスト
+# ネットワークには一切繋がず、requests互換のフェイクセッションでモックする
+# ============================================================
+import voicevox_client as vv
+
+
+class _FakeResp:
+    def __init__(self, status_code=200, json_data=None, content=b""):
+        self.status_code = status_code
+        self._json_data = json_data
+        self.content = content
+        self.text = str(json_data) if json_data is not None else ""
+
+    def json(self):
+        return self._json_data
+
+
+class _FakeSession:
+    """呼ばれた回数・引数を記録しつつ、あらかじめ用意した応答を順に返す"""
+    def __init__(self, responses):
+        self._responses = list(responses)
+        self.calls = []
+
+    def post(self, url, **kwargs):
+        self.calls.append(("POST", url, kwargs))
+        return self._responses.pop(0)
+
+    def get(self, url, **kwargs):
+        self.calls.append(("GET", url, kwargs))
+        return self._responses.pop(0)
+
+
+vv_ok_session = _FakeSession([
+    _FakeResp(200, json_data={"accent_phrases": []}),
+    _FakeResp(200, content=b"RIFF....WAVEfake"),
+])
+vv_wav = vv.synthesize("こんにちは", session=vv_ok_session)
+check("VOICEVOX合成が成功するとWAVバイト列が返る", vv_wav == b"RIFF....WAVEfake")
+check("audio_query→synthesisの順で2回呼ばれる",
+      [c[0] + " " + c[1].split("/")[-1] for c in vv_ok_session.calls]
+      == ["POST audio_query", "POST synthesis"])
+check("話者IDが青山龍星ノーマル(13)で渡される",
+      vv_ok_session.calls[0][2]["params"]["speaker"] == 13)
+
+check("空文字は接続せずNoneを返す", vv.synthesize("", session=_FakeSession([])) is None)
+
+vv_query_fail_session = _FakeSession([_FakeResp(500)])
+check("audio_query失敗時はNone",
+      vv.synthesize("テスト", session=vv_query_fail_session) is None)
+
+vv_synth_fail_session = _FakeSession([
+    _FakeResp(200, json_data={"accent_phrases": []}),
+    _FakeResp(500),
+])
+check("synthesis失敗時はNone",
+      vv.synthesize("テスト", session=vv_synth_fail_session) is None)
+
+
+class _RaisingSession:
+    def post(self, url, **kwargs):
+        raise ConnectionError("engine not running")
+
+    def get(self, url, **kwargs):
+        raise ConnectionError("engine not running")
+
+
+check("エンジン未起動（例外）でも落ちずにNone",
+      vv.synthesize("テスト", session=_RaisingSession()) is None)
+check("is_engine_running: 応答200ならTrue",
+      vv.is_engine_running(session=_FakeSession([_FakeResp(200)])) is True)
+check("is_engine_running: 例外ならFalse",
+      vv.is_engine_running(session=_RaisingSession()) is False)
+
 print()
 ok = sum(1 for _, c in results if c)
 print(f"===== 結果: {ok}/{len(results)} 件成功 =====")
