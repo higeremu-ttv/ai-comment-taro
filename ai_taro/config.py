@@ -283,6 +283,15 @@ VOICEVOX_ENGINE_PATH = os.path.join(os.environ.get("LOCALAPPDATA", ""), "Program
 # 英語コメントを読むGemini TTSの声（2026-09-29 おじさんが5つ聞き比べて Puck を選んだ）
 READ_ALOUD_ENGLISH_VOICE = "Puck"
 
+# 太郎の発言をGeminiの声で読む（オフなら視聴者コメントと同じVOICEVOXで読む）
+# 費用の目安: 上位版で発言1回約0.2円、1配信200回で約40円（2026-09-29の料金。2027年1月から倍）
+TARO_VOICE_ENABLED = False
+
+# 太郎の声（2026-09-29 おじさんが14候補を聞き比べて決定）
+TARO_VOICE_NAME = "Algieba"
+TARO_VOICE_MODEL = "gemini-3.8-flash-tts"
+TARO_VOICE_STYLE = "少しおバカで生意気、人をなめたような憎たらしい口調で"
+
 # 日本語はこの文字数を超えたら「以下略」（棒読みちゃんの今の設定と同じ30。0で切らない）
 READ_ALOUD_MAX_CHARS_JA = 30
 

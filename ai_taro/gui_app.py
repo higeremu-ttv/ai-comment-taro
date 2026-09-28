@@ -324,6 +324,8 @@ class BotGUI:
         self.var_viewer_comment_reaction_enabled = tk.BooleanVar()
         self.var_reaction_bot_accounts = tk.StringVar()
         self.var_read_aloud_enabled = tk.BooleanVar()  # v4.57
+        self.var_taro_voice_enabled = tk.BooleanVar()  # v4.57
+        self.var_taro_voice_style = tk.StringVar()     # v4.57
         self.var_gimmick_enabled = tk.BooleanVar()
         self.var_gimmick_words = tk.StringVar()
         self.var_speech_gimmicks = tk.StringVar()
@@ -484,6 +486,20 @@ class BotGUI:
         make_note(sec4, "オンにするときは TwitchTalkApp・棒読みちゃんを起動しない（二重に読まれます）。「設定を保存」してから開始")
         make_note(sec4, "配信に乗せるには、OBSに太郎（pythonw.exe）のアプリケーション音声キャプチャが必要です")
 
+        chk_taro_voice_row = tk.Frame(sec4, bg=self.colors["panel"])
+        chk_taro_voice_row.pack(fill="x", padx=12, pady=3)
+        tk.Checkbutton(
+            chk_taro_voice_row, text="太郎の発言をGeminiの声で読む（オフならVOICEVOX）",
+            variable=self.var_taro_voice_enabled,
+            bg=self.colors["panel"], fg=self.colors["text"],
+            selectcolor=self.colors["log_bg"],
+            activebackground=self.colors["panel"],
+            font=("Yu Gothic UI", 10)
+        ).pack(side="left")
+        make_note(sec4, "上のチェック（読み上げ）もオンのときだけ働きます。費用の目安: 1配信200回で約40円")
+        make_field(sec4, "太郎の声の口調", self.var_taro_voice_style)
+        make_note(sec4, "Geminiへの話し方の指示。例: 少しおバカで生意気、人をなめたような憎たらしい口調で")
+
         # ギミック参加設定（v4.53）
         chk_gimmick_row = tk.Frame(sec4, bg=self.colors["panel"])
         chk_gimmick_row.pack(fill="x", padx=12, pady=3)
@@ -584,6 +600,8 @@ class BotGUI:
             self.var_viewer_comment_reaction_enabled.set(getattr(cfg, "VIEWER_COMMENT_REACTION_ENABLED", True))
             self.var_reaction_bot_accounts.set(getattr(cfg, "REACTION_BOT_ACCOUNTS", "nightbot,streamelements"))
             self.var_read_aloud_enabled.set(getattr(cfg, "READ_ALOUD_ENABLED", False))
+            self.var_taro_voice_enabled.set(getattr(cfg, "TARO_VOICE_ENABLED", False))
+            self.var_taro_voice_style.set(getattr(cfg, "TARO_VOICE_STYLE", ""))
             self.var_gimmick_enabled.set(getattr(cfg, "GIMMICK_ENABLED", True))
             self.var_gimmick_words.set(getattr(cfg, "GIMMICK_WORDS", "行進,ランダム,おなかすいた"))
             self.var_speech_gimmicks.set(getattr(cfg, "SPEECH_GIMMICKS", "ビクロイ=gg"))
@@ -655,6 +673,10 @@ class BotGUI:
                                     self.var_reaction_bot_accounts.get())
             content = replace_value(content, "READ_ALOUD_ENABLED",
                                     str(self.var_read_aloud_enabled.get()), is_string=False)
+            content = replace_value(content, "TARO_VOICE_ENABLED",
+                                    str(self.var_taro_voice_enabled.get()), is_string=False)
+            content = replace_value(content, "TARO_VOICE_STYLE",
+                                    self.var_taro_voice_style.get().replace('"', '').replace("'", ""))
             content = replace_value(content, "GIMMICK_ENABLED",
                                     str(self.var_gimmick_enabled.get()), is_string=False)
             content = replace_value(content, "GIMMICK_WORDS",
@@ -846,6 +868,10 @@ class BotGUI:
                     twitch.set_read_aloud_worker(read_aloud)
                     self.bot_instance["read_aloud"] = read_aloud
                     logger.info("読み上げ: オン（日本語=VOICEVOX / 英語=Gemini TTS）")
+                    if getattr(config, 'TARO_VOICE_ENABLED', False):
+                        logger.info(f"太郎の声: Gemini（{getattr(config, 'TARO_VOICE_NAME', '')}）")
+                    else:
+                        logger.info("太郎の声: VOICEVOX")
                 except Exception as e:
                     logger.warning(f"読み上げを開始できませんでした: {e}")
             else:

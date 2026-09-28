@@ -11,7 +11,10 @@ Twitchのコメントを受け取るたびに順番待ちの列（キュー）�
   太郎のプロセス（pythonw.exe、実行ファイル名で一致）を拾って乗せる。デスクトップ音声は配信に
   乗らない設定のため、このソースが無いと読み上げは配信で聞こえない（棒読みちゃんも同じ方式で
   BouyomiChan.exe を拾っていた。2026-09-29 OBS設定ファイルで確認）。
-- 太郎の声（§3）も将来この同じ列に並べる（enqueue_wav）。読み上げ同士が重ならない。
+- 太郎の発言（§3）: TARO_VOICE_ENABLED がオンなら Gemini の声（Algieba・生意気な口調）で読む。
+  声づくりに5〜7秒かかるため、投稿した瞬間に別の手で作り始め（並行）、再生だけ列の順番を守る。
+  その間も視聴者コメントの読み上げは止まらない。Geminiが失敗したらVOICEVOXで読む（黙らない）。
+  オフなら視聴者コメントと同じくVOICEVOXで読む（今までのTwitchTalkAppと同じ）。
 """
 
 import logging
@@ -20,6 +23,7 @@ import queue
 import subprocess
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 import gemini_tts_client
 import reading_dictionary
@@ -41,7 +45,8 @@ class ReadAloudWorker:
 
     def __init__(self, config, gemini_api_key: str = "", base_dir: str = "",
                  play_func=_play_wav, pipeline_func=reading_pipeline.read_comment,
-                 engine_check=voicevox_client.is_engine_running):
+                 engine_check=voicevox_client.is_engine_running,
+                 taro_synth=gemini_tts_client.speak_as_taro):
         self.config = config
         self.gemini_api_key = gemini_api_key
         self.base_dir = base_dir or os.path.dirname(os.path.abspath(__file__))
@@ -56,6 +61,14 @@ class ReadAloudWorker:
         self.max_queue = getattr(config, "READ_ALOUD_MAX_QUEUE", 50)
         self.max_chars_ja = getattr(config, "READ_ALOUD_MAX_CHARS_JA", 30)
         self.english_voice = getattr(config, "READ_ALOUD_ENGLISH_VOICE", "Puck")
+        self._taro_synth = taro_synth
+        self.taro_voice_enabled = getattr(config, "TARO_VOICE_ENABLED", False)
+        self.taro_voice_name = getattr(config, "TARO_VOICE_NAME", "Algieba")
+        self.taro_voice_model = getattr(config, "TARO_VOICE_MODEL", "gemini-3.8-flash-tts")
+        self.taro_voice_style = getattr(config, "TARO_VOICE_STYLE", "")
+        self.bot_nick = getattr(config, "BOT_NICK", "")
+        # 太郎の声づくり専用の手（再生の列とは別に、先に作り始めておくため）
+        self._taro_pool = ThreadPoolExecutor(max_workers=2)
 
     def _gemini_english(self, text, api_key):
         return gemini_tts_client.synthesize(text, api_key=api_key, voice_name=self.english_voice)
@@ -78,6 +91,7 @@ class ReadAloudWorker:
         self._queue.put(_STOP)
         if self._thread:
             self._thread.join(timeout=3)
+        self._taro_pool.shutdown(wait=False)
         self._stop_engine()
         logger.info("読み上げ係を停止しました")
 
@@ -124,9 +138,22 @@ class ReadAloudWorker:
         self._queue.put(("comment", username, text, emote_names))
 
     def enqueue_wav(self, wav: bytes):
-        """合成済みの音声を列に並べる（太郎の声 §3 用）"""
+        """合成済みの音声を列に並べる"""
         if wav:
             self._queue.put(("wav", wav))
+
+    def enqueue_taro(self, text: str):
+        """太郎の発言を読む（§3）。Geminiの声がオンなら、ここで声づくりを始めてから列に並べる"""
+        if not text:
+            return
+        if not self.taro_voice_enabled:
+            self.enqueue_comment(self.bot_nick, text)
+            return
+        future = self._taro_pool.submit(
+            self._taro_synth, text, api_key=self.gemini_api_key,
+            style=self.taro_voice_style, model=self.taro_voice_model,
+            voice_name=self.taro_voice_name)
+        self._queue.put(("taro", future, text))
 
     # ------------------------------------------------------------
     # 本体（専用スレッド）
@@ -139,6 +166,20 @@ class ReadAloudWorker:
             try:
                 if item[0] == "wav":
                     wav = item[1]
+                elif item[0] == "taro":
+                    _, future, text = item
+                    try:
+                        wav = future.result(timeout=30)
+                    except Exception as e:
+                        logger.warning(f"太郎の声（Gemini）の作成に失敗: {e}")
+                        wav = None
+                    if not wav:
+                        logger.warning("太郎の声が作れなかったため、VOICEVOXで読みます")
+                        wav = self._pipeline(
+                            self.bot_nick, text, gemini_api_key=self.gemini_api_key,
+                            dictionary_data=self.dictionary, exclusions_data=self.exclusions,
+                            gemini_synthesize=self._gemini_english,
+                            emote_names=None, max_chars_ja=self.max_chars_ja)
                 else:
                     _, username, text, emote_names = item
                     wav = self._pipeline(

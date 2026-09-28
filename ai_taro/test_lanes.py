@@ -1185,6 +1185,86 @@ worker2.enqueue_comment("b", "2")
 worker2.enqueue_comment("c", "3")
 check("読み上げ待ちが上限を超えたら新しいコメントは捨てる", worker2._queue.qsize() == 2)
 
+# ============================================================
+# v4.57 太郎の声（Gemini）の配線テスト
+# ============================================================
+class _TaroCfg(_RAConfig):
+    TARO_VOICE_ENABLED = True
+    TARO_VOICE_NAME = "Algieba"
+    TARO_VOICE_MODEL = "gemini-3.8-flash-tts"
+    TARO_VOICE_STYLE = "生意気に"
+    BOT_NICK = "higeremu_ai"
+    READ_ALOUD_MAX_QUEUE = 50
+
+
+def _wait_played(lst, n, sec=5):
+    t0 = time.time()
+    while len(lst) < n and time.time() - t0 < sec:
+        time.sleep(0.02)
+
+
+_taro_calls = []
+
+
+def _slow_taro_synth(text, **kw):
+    _taro_calls.append((text, kw))
+    time.sleep(0.3)  # 声づくりに時間がかかる想定
+    return f"GEMINI-TARO:{text}".encode()
+
+
+_played_t = []
+_pipe_t = []
+
+
+def _pipe_rec(username, text, **kw):
+    _pipe_t.append((username, text))
+    return f"VV:{username}:{text}".encode()
+
+
+wt = ra_mod.ReadAloudWorker(_TaroCfg(), gemini_api_key="x", base_dir=_ra_dir,
+                            play_func=_played_t.append, pipeline_func=_pipe_rec,
+                            engine_check=lambda: True, taro_synth=_slow_taro_synth)
+wt.start()
+wt.enqueue_taro("ひげさん下手すぎ")
+wt.enqueue_comment("viewer1", "こんばんは")
+_wait_played(_played_t, 2)
+check("太郎の声オン: 太郎の発言はGeminiの声で読む", "GEMINI-TARO:ひげさん下手すぎ".encode() in _played_t)
+check("太郎の声に口調・声・モデルが渡る",
+      _taro_calls[0][1]["style"] == "生意気に" and _taro_calls[0][1]["voice_name"] == "Algieba"
+      and _taro_calls[0][1]["model"] == "gemini-3.8-flash-tts")
+check("再生は列の順番どおり（太郎→視聴者）",
+      _played_t[:2] == ["GEMINI-TARO:ひげさん下手すぎ".encode(), "VV:viewer1:こんばんは".encode()])
+wt.stop()
+
+_played_f = []
+wf = ra_mod.ReadAloudWorker(_TaroCfg(), gemini_api_key="x", base_dir=_ra_dir,
+                            play_func=_played_f.append, pipeline_func=_pipe_rec,
+                            engine_check=lambda: True, taro_synth=lambda text, **kw: None)
+wf.start()
+wf.enqueue_taro("失敗テスト")
+_wait_played(_played_f, 1)
+check("Geminiが失敗したら太郎の発言はVOICEVOXで読む（黙らない）",
+      _played_f[:1] == ["VV:higeremu_ai:失敗テスト".encode()])
+wf.stop()
+
+
+class _TaroOffCfg(_TaroCfg):
+    TARO_VOICE_ENABLED = False
+
+
+_played_o = []
+_taro_calls_off = []
+wo = ra_mod.ReadAloudWorker(_TaroOffCfg(), gemini_api_key="x", base_dir=_ra_dir,
+                            play_func=_played_o.append, pipeline_func=_pipe_rec,
+                            engine_check=lambda: True,
+                            taro_synth=lambda text, **kw: _taro_calls_off.append(text))
+wo.start()
+wo.enqueue_taro("オフのとき")
+_wait_played(_played_o, 1)
+check("太郎の声オフ: 今までどおりVOICEVOXで読み、Geminiは呼ばない",
+      _played_o[:1] == ["VV:higeremu_ai:オフのとき".encode()] and _taro_calls_off == [])
+wo.stop()
+
 print()
 ok = sum(1 for _, c in results if c)
 print(f"===== 結果: {ok}/{len(results)} 件成功 =====")

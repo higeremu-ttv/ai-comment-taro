@@ -64,6 +64,12 @@ class TwitchModule:
         if worker is not None and content:
             worker.enqueue_comment(username, content, emote_names)
 
+    def read_aloud_taro(self, message: str):
+        """v4.57: 太郎自身の投稿を読み上げ係に渡す（Geminiの声がオンならその声で）"""
+        worker = getattr(self, '_read_aloud_worker', None)
+        if worker is not None and message:
+            worker.enqueue_taro(message)
+
     @staticmethod
     def extract_emote_names(content: str, tags) -> list:
         """v4.57: Twitchのemotesタグ（例 '25:0-4,12-16/1902:6-10'）からエモート名を取り出す"""
@@ -440,7 +446,7 @@ class TwitchModule:
                             logger.info(f"コメント送信: {message}")
                             # v4.57: 太郎の投稿も読み上げる（今のTTAも読んでいるため同じ動きにする。
                             # Twitchは自分の投稿を受信側に返さないので、送信成功時にここで渡す）
-                            twitch_module_ref.read_aloud(config.BOT_NICK, message)
+                            twitch_module_ref.read_aloud_taro(message)
 
                             # 送信後の短い待機（連続送信防止）
                             await asyncio.sleep(1)
