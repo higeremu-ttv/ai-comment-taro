@@ -1288,6 +1288,60 @@ check("読み上げだけ: 停止ボタンで抜ける", not _ro_thread.is_alive
 check("読み上げだけ: 太郎は何も投稿しない", _tw.sent == [])
 ra_mod.ReadAloudWorker = _orig_worker_cls
 
+# v4.58 読み上げテストボタン
+_played_d = []
+wd = ra_mod.ReadAloudWorker(_TaroOffCfg(), gemini_api_key="x", base_dir=_ra_dir,
+                            play_func=_played_d.append, pipeline_func=_pipe_rec,
+                            engine_check=lambda: True)
+wd.start()
+_ev = _th.Event()
+wd.enqueue_comment("viewer1", "一件目")
+wd.enqueue_done_marker(_ev)
+check("流し終わったら目印で知らせる", _ev.wait(3) and _played_d == ["VV:viewer1:一件目".encode()])
+wd.stop()
+
+
+class _FakeRoot:
+    def after(self, ms, fn, *args):
+        fn(*args)
+
+
+class _FakeBtn:
+    def __init__(self):
+        self.state = None
+
+    def config(self, **kw):
+        self.state = kw.get("state", self.state)
+
+
+class _FakeRunningWorker:
+    taro_voice_enabled = True
+
+    def __init__(self):
+        self.items = []
+
+    def enqueue_comment(self, u, t, emotes=None):
+        self.items.append(("comment", u, t))
+
+    def enqueue_taro(self, t):
+        self.items.append(("taro", t))
+
+    def enqueue_done_marker(self, ev):
+        ev.set()
+
+
+_rw = _FakeRunningWorker()
+_logs = []
+_ts = _types.SimpleNamespace(bot_running=True, bot_instance={"read_aloud": _rw}, root=_FakeRoot(),
+                             read_test_btn=_FakeBtn(), READ_TEST_VIEWER=_gui.BotGUI.READ_TEST_VIEWER,
+                             READ_TEST_TARO=_gui.BotGUI.READ_TEST_TARO,
+                             _append_log=lambda m, lv="INFO": _logs.append(m))
+_gui.BotGUI._read_aloud_test_worker(_ts)
+check("起動中の読み上げテスト: 動いている読み上げ係に視聴者コメント→太郎の声の順で並ぶ",
+      [i[0] for i in _rw.items] == ["comment", "taro"])
+check("読み上げテスト: 終わったらボタンが押せる状態に戻る", _ts.read_test_btn.state == "normal")
+check("読み上げテスト: 終わったことを画面の記録に出す", any("終わりました" in m for m in _logs))
+
 # 起動ボタンの種類 → 設定値
 _m = _types.SimpleNamespace(TARO_AI_ENABLED=True, READ_ALOUD_ENABLED=False)
 _gui.BotGUI._apply_run_mode(_m, "hybrid")

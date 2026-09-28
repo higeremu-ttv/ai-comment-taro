@@ -145,6 +145,10 @@ class ReadAloudWorker:
         if wav:
             self._queue.put(("wav", wav))
 
+    def enqueue_done_marker(self, event):
+        """ここまで並んだ分を流し終えたら event.set() する（読み上げテスト用）"""
+        self._queue.put(("done", event))
+
     def enqueue_taro(self, text: str):
         """太郎の発言を読む（§3）。Geminiの声がオンなら、ここで声づくりを始めてから列に並べる"""
         if not text:
@@ -168,6 +172,9 @@ class ReadAloudWorker:
             if item is _STOP:
                 break
             try:
+                if item[0] == "done":
+                    item[1].set()
+                    continue
                 if item[0] == "wav":
                     wav = item[1]
                 elif item[0] == "taro":

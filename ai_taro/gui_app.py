@@ -207,6 +207,17 @@ class BotGUI:
         )
         clear_btn.pack(side="left", padx=(0, 8))
 
+        # v4.58: 読み上げテスト（OBSの音量合わせ用。太郎自身が音を出すのでOBSのソースで拾える）
+        self.read_test_btn = tk.Button(
+            btn_frame, text="🔊 読み上げテスト",
+            bg=self.colors["border"], fg=self.colors["text"],
+            font=("Yu Gothic UI", 10),
+            relief="flat", bd=0, padx=12, pady=8,
+            cursor="hand2",
+            command=self.run_read_aloud_test
+        )
+        self.read_test_btn.pack(side="left", padx=(0, 8))
+
         # 会話ステート表示
         state_frame = tk.Frame(parent, bg=self.colors["panel"], pady=4)
         state_frame.pack(fill="x", padx=8, pady=(0, 4))
@@ -1029,6 +1040,56 @@ class BotGUI:
             logging.getLogger("gui_bot").error(traceback.format_exc())
         finally:
             self._cleanup_bot()
+
+    # ------------------------------------------------------------
+    # v4.58: 読み上げテスト（OBSの音量合わせ用）
+    # ------------------------------------------------------------
+    READ_TEST_VIEWER = ("読み上げテスト", "読み上げのテストです。この声は配信に聞こえていますか？")
+    READ_TEST_TARO = "ひげさん、音量どう？ちゃんと聞こえてる？"
+
+    def run_read_aloud_test(self):
+        """視聴者コメントの読み上げと太郎の声を1回ずつ流す。
+        起動中なら動いている読み上げ係に並べる。止まっているなら一時的に読み上げ係を立ち上げて
+        流し、終わったら片付ける（Twitchにはつながない・チャットには何も出ない）"""
+        self.read_test_btn.config(state="disabled")
+        threading.Thread(target=self._read_aloud_test_worker, daemon=True).start()
+
+    def _read_aloud_test_worker(self):
+        log = lambda msg, lv="INFO": self.root.after(0, self._append_log, msg, lv)
+        temp_worker = None
+        try:
+            worker = (self.bot_instance or {}).get("read_aloud") if self.bot_running else None
+            if worker is None:
+                if "config" in sys.modules:
+                    del sys.modules["config"]  # 保存したばかりの設定を読み直す
+                import config
+                from read_aloud import ReadAloudWorker
+                log("🔊 読み上げテスト: 読み上げ係を一時的に起動します（VOICEVOXの起動に数秒かかります）")
+                temp_worker = ReadAloudWorker(config, gemini_api_key=getattr(config, "GEMINI_API_KEY", ""))
+                temp_worker.start()
+                worker = temp_worker
+                taro_voice = getattr(config, "TARO_VOICE_ENABLED", False)
+            else:
+                taro_voice = worker.taro_voice_enabled
+            log("🔊 読み上げテスト: ①視聴者コメント（VOICEVOX）→ ②太郎の声（"
+                + ("Gemini" if taro_voice else "VOICEVOX。Geminiの声は設定でオフ") + "）の順に流します")
+            done = threading.Event()
+            worker.enqueue_comment(*self.READ_TEST_VIEWER)
+            worker.enqueue_taro(self.READ_TEST_TARO)
+            worker.enqueue_done_marker(done)
+            if done.wait(timeout=60):
+                log("🔊 読み上げテスト: 終わりました。OBSの「太郎の読み上げ」のメーターが動いたか確認してください")
+            else:
+                log("🔊 読み上げテスト: 60秒たっても終わりませんでした", "WARNING")
+        except Exception as e:
+            log(f"🔊 読み上げテストに失敗: {e}", "WARNING")
+        finally:
+            if temp_worker is not None:
+                try:
+                    temp_worker.stop()
+                except Exception:
+                    pass
+            self.root.after(0, lambda: self.read_test_btn.config(state="normal"))
 
     @staticmethod
     def _apply_run_mode(config, mode: str):
