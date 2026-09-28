@@ -324,6 +324,7 @@ class BotGUI:
         self.var_viewer_comment_reaction_enabled = tk.BooleanVar()
         self.var_reaction_bot_accounts = tk.StringVar()
         self.var_read_aloud_enabled = tk.BooleanVar()  # v4.57
+        self.var_taro_ai_enabled = tk.BooleanVar()     # v4.57
         self.var_taro_voice_enabled = tk.BooleanVar()  # v4.57
         self.var_taro_voice_style = tk.StringVar()     # v4.57
         self.var_gimmick_enabled = tk.BooleanVar()
@@ -473,6 +474,18 @@ class BotGUI:
         make_note(sec4, "お知らせ系ボットのみ指定。例: nightbot,streamelements")
 
         # 読み上げ設定（v4.57）
+        chk_taro_ai_row = tk.Frame(sec4, bg=self.colors["panel"])
+        chk_taro_ai_row.pack(fill="x", padx=12, pady=3)
+        tk.Checkbutton(
+            chk_taro_ai_row, text="太郎（AIのコメント・マイクの聞き取り）を動かす",
+            variable=self.var_taro_ai_enabled,
+            bg=self.colors["panel"], fg=self.colors["text"],
+            selectcolor=self.colors["log_bg"],
+            activebackground=self.colors["panel"],
+            font=("Yu Gothic UI", 10)
+        ).pack(side="left")
+        make_note(sec4, "外すと「読み上げだけ」で動きます（太郎はチャットに投稿しません）")
+
         chk_read_aloud_row = tk.Frame(sec4, bg=self.colors["panel"])
         chk_read_aloud_row.pack(fill="x", padx=12, pady=3)
         tk.Checkbutton(
@@ -600,6 +613,7 @@ class BotGUI:
             self.var_viewer_comment_reaction_enabled.set(getattr(cfg, "VIEWER_COMMENT_REACTION_ENABLED", True))
             self.var_reaction_bot_accounts.set(getattr(cfg, "REACTION_BOT_ACCOUNTS", "nightbot,streamelements"))
             self.var_read_aloud_enabled.set(getattr(cfg, "READ_ALOUD_ENABLED", False))
+            self.var_taro_ai_enabled.set(getattr(cfg, "TARO_AI_ENABLED", True))
             self.var_taro_voice_enabled.set(getattr(cfg, "TARO_VOICE_ENABLED", False))
             self.var_taro_voice_style.set(getattr(cfg, "TARO_VOICE_STYLE", ""))
             self.var_gimmick_enabled.set(getattr(cfg, "GIMMICK_ENABLED", True))
@@ -673,6 +687,8 @@ class BotGUI:
                                     self.var_reaction_bot_accounts.get())
             content = replace_value(content, "READ_ALOUD_ENABLED",
                                     str(self.var_read_aloud_enabled.get()), is_string=False)
+            content = replace_value(content, "TARO_AI_ENABLED",
+                                    str(self.var_taro_ai_enabled.get()), is_string=False)
             content = replace_value(content, "TARO_VOICE_ENABLED",
                                     str(self.var_taro_voice_enabled.get()), is_string=False)
             content = replace_value(content, "TARO_VOICE_STYLE",
@@ -805,6 +821,12 @@ class BotGUI:
             _root_logger.setLevel(logging.INFO)
 
             logger = logging.getLogger("gui_bot")
+
+            # v4.57: 「読み上げだけ」モード（太郎のAI・マイクを動かさない日）
+            if not getattr(config, 'TARO_AI_ENABLED', True):
+                self._run_read_only(config, TwitchModule, logger)
+                return
+
             logger.info("=" * 50)
             logger.info("AIコメント太郎 v4.57 を起動します（コメント読み上げを統合）")
             logger.info(f"チャンネル: #{config.CHANNEL_NAME}")
@@ -1017,6 +1039,34 @@ class BotGUI:
         finally:
             self._cleanup_bot()
 
+    def _run_read_only(self, config, TwitchModule, logger):
+        """v4.57: 読み上げだけ動かす（太郎のAIコメント・マイクの聞き取り・俳句・ギミックは動かさない）。
+        Twitchの受信と読み上げ係だけを起動する。太郎はチャットに一切投稿しない。
+        _run_bot の try の中から呼ばれるので、終了時の後片付け（_cleanup_bot）はそちらで行われる"""
+        logger.info("=" * 50)
+        logger.info("AIコメント太郎 v4.57 を「読み上げだけ」で起動します")
+        logger.info("（AIのコメント・マイクの聞き取り・俳句/謎かけ・ギミック参加は動かしません）")
+        logger.info(f"チャンネル: #{config.CHANNEL_NAME}")
+        logger.info("=" * 50)
+
+        # 太郎が投稿する経路を止める（ギミック参加はTwitch受信側で動くため明示的に切る）
+        config.GIMMICK_ENABLED = False
+
+        from read_aloud import ReadAloudWorker
+        twitch = TwitchModule(config)
+        self.bot_instance = {"twitch": twitch}
+        read_aloud = ReadAloudWorker(config, gemini_api_key=getattr(config, 'GEMINI_API_KEY', ''))
+        read_aloud.start()
+        twitch.set_read_aloud_worker(read_aloud)
+        self.bot_instance["read_aloud"] = read_aloud
+        logger.info("読み上げ: オン（日本語=VOICEVOX / 英語=Gemini TTS）")
+
+        logger.info("Twitch接続を開始します...")
+        twitch.start()
+        logger.info("読み上げだけで稼働中です。停止ボタンで停止します。")
+        while self.bot_running:
+            time.sleep(1)
+
     def _update_state_display(self, comment_gen):
         """会話ステートをGUIに表示する"""
         try:
@@ -1041,7 +1091,8 @@ class BotGUI:
         """Botを停止してリソースを解放する"""
         if self.bot_instance:
             try:
-                self.bot_instance["audio"].stop()
+                if self.bot_instance.get("audio"):  # v4.57: 読み上げだけのときは無い
+                    self.bot_instance["audio"].stop()
             except Exception:
                 pass
             try:

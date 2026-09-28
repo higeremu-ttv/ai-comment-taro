@@ -1265,6 +1265,69 @@ check("太郎の声オフ: 今までどおりVOICEVOXで読み、Geminiは呼ば
       _played_o[:1] == ["VV:higeremu_ai:オフのとき".encode()] and _taro_calls_off == [])
 wo.stop()
 
+# ============================================================
+# v4.57「読み上げだけ」モード（太郎のAIを動かさない日）のテスト
+# 画面は開かず、_run_read_only だけを偽物のTwitch・読み上げ係で動かす
+# ============================================================
+import threading as _th
+import types as _types
+import logging as _logging
+import gui_app as _gui
+
+
+class _FakeTwitchRO:
+    instances = []
+
+    def __init__(self, config):
+        self.config = config
+        self.started = False
+        self.worker = None
+        self.sent = []
+        _FakeTwitchRO.instances.append(self)
+
+    def set_read_aloud_worker(self, w):
+        self.worker = w
+
+    def start(self):
+        self.started = True
+
+    def send_comment(self, m):
+        self.sent.append(m)
+
+
+class _FakeWorkerRO:
+    def __init__(self, config, gemini_api_key=""):
+        self.started = False
+
+    def start(self):
+        self.started = True
+
+    def stop(self):
+        pass
+
+
+_ro_cfg = _types.SimpleNamespace(CHANNEL_NAME="higeremu", GIMMICK_ENABLED=True, GEMINI_API_KEY="x")
+_orig_worker_cls = ra_mod.ReadAloudWorker
+ra_mod.ReadAloudWorker = _FakeWorkerRO
+_ro_self = _types.SimpleNamespace(bot_running=True, bot_instance=None)
+_ro_thread = _th.Thread(target=_gui.BotGUI._run_read_only,
+                        args=(_ro_self, _ro_cfg, _FakeTwitchRO, _logging.getLogger("test_ro")),
+                        daemon=True)
+_ro_thread.start()
+time.sleep(0.3)
+_tw = _FakeTwitchRO.instances[-1]
+check("読み上げだけ: Twitchの受信は始まる", _tw.started)
+check("読み上げだけ: 読み上げ係が起動してTwitchにつながる",
+      _tw.worker is not None and _tw.worker.started)
+check("読み上げだけ: ギミック参加（太郎の投稿）は切られる", _ro_cfg.GIMMICK_ENABLED is False)
+check("読み上げだけ: 後片付け用に読み上げ係が登録される",
+      _ro_self.bot_instance.get("read_aloud") is _tw.worker and "audio" not in _ro_self.bot_instance)
+_ro_self.bot_running = False
+_ro_thread.join(timeout=3)
+check("読み上げだけ: 停止ボタンで抜ける", not _ro_thread.is_alive())
+check("読み上げだけ: 太郎は何も投稿しない", _tw.sent == [])
+ra_mod.ReadAloudWorker = _orig_worker_cls
+
 print()
 ok = sum(1 for _, c in results if c)
 print(f"===== 結果: {ok}/{len(results)} 件成功 =====")

@@ -273,6 +273,10 @@ REACTION_BOT_ACCOUNTS = "streamelements,frostytools"
 # ============================================================
 # 読み上げ（v4.57: 棒読みちゃん・TwitchTalkAppの代わりに太郎が読む）
 # ============================================================
+# 太郎（AIのコメント・マイクの聞き取り・俳句/謎かけ・ギミック参加）を動かすか。
+# False にすると「読み上げだけ」で起動する（太郎はチャットに投稿しない。READ_ALOUD_ENABLED に関係なく読み上げる）
+TARO_AI_ENABLED = True
+
 # オンにすると、視聴者コメントを太郎が読み上げる（日本語=VOICEVOX、英語=Gemini TTS）。
 # TwitchTalkApp・棒読みちゃんと同時にオンにすると二重に読まれるので、どちらか片方だけにする。
 READ_ALOUD_ENABLED = False
