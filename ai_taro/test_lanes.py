@@ -926,6 +926,94 @@ check("is_engine_running: 応答200ならTrue",
 check("is_engine_running: 例外ならFalse",
       vv.is_engine_running(session=_RaisingSession()) is False)
 
+# ============================================================
+# v4.57 Gemini TTSクライアント（gemini_tts_client）のテスト
+# ネットワークには一切繋がず、genai.Client互換のフェイクでモックする
+# ============================================================
+import gemini_tts_client as gtts
+
+
+class _FakeInlineData:
+    def __init__(self, data, mime_type="audio/wav"):
+        self.data = data
+        self.mime_type = mime_type
+
+
+class _FakePart:
+    def __init__(self, inline_data=None):
+        self.inline_data = inline_data
+
+
+class _FakeContent:
+    def __init__(self, parts):
+        self.parts = parts
+
+
+class _FakeCandidate:
+    def __init__(self, parts):
+        self.content = _FakeContent(parts)
+
+
+class _FakeGenaiResponse:
+    def __init__(self, candidates):
+        self.candidates = candidates
+
+
+class _FakeModels:
+    def __init__(self, response=None, exc=None):
+        self._response = response
+        self._exc = exc
+        self.calls = []
+
+    def generate_content(self, **kwargs):
+        self.calls.append(kwargs)
+        if self._exc:
+            raise self._exc
+        return self._response
+
+
+class _FakeGenaiClient:
+    def __init__(self, response=None, exc=None):
+        self.models = _FakeModels(response, exc)
+
+
+gtts_ok_client = _FakeGenaiClient(
+    response=_FakeGenaiResponse([_FakeCandidate([_FakePart(_FakeInlineData(b"RIFFfakewav"))])])
+)
+check("Gemini TTS合成が成功するとWAVバイト列が返る",
+      gtts.synthesize("Hello", api_key="dummy", client=gtts_ok_client) == b"RIFFfakewav")
+check("既定モデルはLite（定型・低コスト優先の方針に合わせる）",
+      gtts_ok_client.models.calls[0]["model"] == "gemini-3.8-flash-lite-tts")
+check("既定の声はKore",
+      gtts_ok_client.models.calls[0]["config"].speech_config.voice_config
+      .prebuilt_voice_config.voice_name == "Kore")
+
+check("空文字は接続せずNoneを返す",
+      gtts.synthesize("", api_key="dummy", client=_FakeGenaiClient()) is None)
+check("APIキー未設定・クライアント未指定ならNone",
+      gtts.synthesize("Hello", api_key="") is None)
+
+gtts_empty_client = _FakeGenaiClient(response=_FakeGenaiResponse([]))
+check("candidatesが空ならNone",
+      gtts.synthesize("Hello", api_key="dummy", client=gtts_empty_client) is None)
+
+gtts_nodata_client = _FakeGenaiClient(
+    response=_FakeGenaiResponse([_FakeCandidate([_FakePart(None)])])
+)
+check("inline_dataが無ければNone",
+      gtts.synthesize("Hello", api_key="dummy", client=gtts_nodata_client) is None)
+
+gtts_error_client = _FakeGenaiClient(exc=ConnectionError("api down"))
+check("API接続失敗（例外）でも落ちずにNone",
+      gtts.synthesize("Hello", api_key="dummy", client=gtts_error_client) is None)
+
+check("声の表現力が要る場面はflash-ttsを指定できる",
+      gtts.synthesize("Hello", api_key="dummy", model="gemini-3.8-flash-tts",
+                       client=_FakeGenaiClient(
+                           response=_FakeGenaiResponse(
+                               [_FakeCandidate([_FakePart(_FakeInlineData(b"x"))])])
+                       )) == b"x")
+
 print()
 ok = sum(1 for _, c in results if c)
 print(f"===== 結果: {ok}/{len(results)} 件成功 =====")

@@ -15,7 +15,10 @@ faster-whisper>=1.0.0
 pyaudio==0.2.14
 
 # Gemini API（コメント生成）
+# 注意: google-generativeaiは2026年にサポート終了。新規のgemini_tts_client.pyは
+# 新SDKのgoogle-genaiを使う（既存のcomment_generator.py等は旧SDKのまま・別件）
 google-generativeai>=0.8.0
+google-genai>=1.75.0
 
 # HTTP通信
 requests==2.32.3
