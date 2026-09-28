@@ -775,6 +775,48 @@ check("文中の名前はそのまま",
       gen10._postprocess_comment("今日のひげさん、なんだか調子良さそうだね！")
       == "今日のひげさん、なんだか調子良さそうだね！")
 
+# ============================================================
+# v4.57 読み上げ辞書（reading_dictionary）のテスト
+# ============================================================
+import reading_dictionary as rd
+
+_RD_TEST_DIR = '/tmp/taro_test_reading_dict'
+shutil.rmtree(_RD_TEST_DIR, ignore_errors=True)
+os.makedirs(_RD_TEST_DIR, exist_ok=True)
+
+rd_data = rd.load_dictionary(_RD_TEST_DIR)
+check("初回読み込みで辞書ファイルが作られる",
+      os.path.exists(os.path.join(_RD_TEST_DIR, rd.DICT_FILE)))
+check("初期データに棒読みちゃん追加語が入っている", rd_data["words"].get("桃煌") == "ももきら")
+check("初期データにTTAのチャンネル絵文字が入っている", rd_data["words"].get("higereGg") == "GG")
+
+check("単純な置き換え（草→くさ）", rd.apply_reading("草生える", rd_data) == "くさ生える")
+check("チャンネル絵文字の置き換え",
+      rd.apply_reading("higereGgしたね", rd_data) == "GGしたね")
+check("wwwwの連続をわらわらに", rd.apply_reading("それなwwww", rd_data) == "それなわらわら")
+check("URLをゆーあーるえるに",
+      rd.apply_reading("見て https://example.com/path すごい", rd_data)
+      == "見て ゆーあーるえる すごい")
+check("辞書にない語はそのまま", rd.apply_reading("こんにちは", rd_data) == "こんにちは")
+check("空文字はそのまま", rd.apply_reading("", rd_data) == "")
+
+rd2 = rd.add_word(rd_data, "テスト用語", "てすとようご")
+check("覚えて相当の追加ができる", rd2["words"]["テスト用語"] == "てすとようご")
+check("追加した語がすぐ読み上げに反映される",
+      rd.apply_reading("テスト用語です", rd2) == "てすとようごです")
+
+rd.save_dictionary(rd_data, _RD_TEST_DIR)
+rd_reloaded = rd.load_dictionary(_RD_TEST_DIR)
+check("保存して読み直しても内容が保たれる",
+      rd_reloaded["words"].get("テスト用語") == "てすとようご")
+
+# 壊れたJSONでも落ちずに初期データへ復旧する
+_broken_path = os.path.join(_RD_TEST_DIR, rd.DICT_FILE)
+with open(_broken_path, "w", encoding="utf-8") as _f:
+    _f.write("{壊れたJSON")
+rd_recovered = rd.load_dictionary(_RD_TEST_DIR)
+check("壊れたJSONでも初期データで復旧する", rd_recovered["words"].get("草") == "くさ")
+
 print()
 ok = sum(1 for _, c in results if c)
 print(f"===== 結果: {ok}/{len(results)} 件成功 =====")
