@@ -1288,6 +1288,15 @@ check("読み上げだけ: 停止ボタンで抜ける", not _ro_thread.is_alive
 check("読み上げだけ: 太郎は何も投稿しない", _tw.sent == [])
 ra_mod.ReadAloudWorker = _orig_worker_cls
 
+# v4.58 読み方の指示は口調の後ろに付く
+class _PronCfg(_TaroCfg):
+    TARO_VOICE_PRONUNCIATION = "「ヒゲさん」は平板で読む"
+
+
+_wp = ra_mod.ReadAloudWorker(_PronCfg(), base_dir=_ra_dir, play_func=lambda w: None,
+                             pipeline_func=_pipe_rec, engine_check=lambda: True)
+check("読み方の指示が口調の後ろに付く", _wp.taro_voice_style == "生意気に。「ヒゲさん」は平板で読む")
+
 # v4.58 声の大きさをそろえる（normalize_wav）
 import io as _io
 import wave as _wave

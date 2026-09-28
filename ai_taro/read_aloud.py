@@ -107,6 +107,10 @@ class ReadAloudWorker:
         self.taro_voice_style = getattr(config, "TARO_VOICE_STYLE", "")
         self.taro_voice_language = getattr(config, "TARO_VOICE_LANGUAGE", "ja-JP")
         self.taro_voice_replace = getattr(config, "TARO_VOICE_REPLACE", "")
+        # 読み方の指示は口調の後ろに付ける（どちらも本文とは別枠なので声には出ない）
+        pron = getattr(config, "TARO_VOICE_PRONUNCIATION", "")
+        if pron:
+            self.taro_voice_style = (self.taro_voice_style + "。" + pron) if self.taro_voice_style else pron
         self.bot_nick = getattr(config, "BOT_NICK", "")
         # 太郎の声づくり専用の手（再生の列とは別に、先に作り始めておくため）
         self._taro_pool = ThreadPoolExecutor(max_workers=2)

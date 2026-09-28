@@ -346,6 +346,7 @@ class BotGUI:
         self.var_taro_voice_enabled = tk.BooleanVar()  # v4.57
         self.var_taro_voice_style = tk.StringVar()     # v4.57
         self.var_taro_voice_replace = tk.StringVar()   # v4.58
+        self.var_taro_voice_pron = tk.StringVar()      # v4.58
         self.var_gimmick_enabled = tk.BooleanVar()
         self.var_gimmick_words = tk.StringVar()
         self.var_speech_gimmicks = tk.StringVar()
@@ -512,6 +513,8 @@ class BotGUI:
         make_note(sec4, "Geminiへの話し方の指示（声には出ません）。例: 親しい友達にツッコむような、ちょっと生意気な口調で")
         make_field(sec4, "太郎の声の読み替え", self.var_taro_voice_replace)
         make_note(sec4, "声にするときだけ置き換える語（チャットの文は変わらない）。「元=読み」をカンマ区切り。例: ひげさん=ヒゲさん")
+        make_field(sec4, "太郎の声の読み方", self.var_taro_voice_pron)
+        make_note(sec4, "抑揚の指示（声には出ません）。例: 「ヒゲさん」は「ヒ」を低く、「ゲさん」を高く平らに読む")
 
         # ギミック参加設定（v4.53）
         chk_gimmick_row = tk.Frame(sec4, bg=self.colors["panel"])
@@ -615,6 +618,7 @@ class BotGUI:
             self.var_taro_voice_enabled.set(getattr(cfg, "TARO_VOICE_ENABLED", False))
             self.var_taro_voice_style.set(getattr(cfg, "TARO_VOICE_STYLE", ""))
             self.var_taro_voice_replace.set(getattr(cfg, "TARO_VOICE_REPLACE", ""))
+            self.var_taro_voice_pron.set(getattr(cfg, "TARO_VOICE_PRONUNCIATION", ""))
             self.var_gimmick_enabled.set(getattr(cfg, "GIMMICK_ENABLED", True))
             self.var_gimmick_words.set(getattr(cfg, "GIMMICK_WORDS", "行進,ランダム,おなかすいた"))
             self.var_speech_gimmicks.set(getattr(cfg, "SPEECH_GIMMICKS", "ビクロイ=gg"))
@@ -690,6 +694,8 @@ class BotGUI:
                                     self.var_taro_voice_style.get().replace('"', '').replace("'", ""))
             content = replace_value(content, "TARO_VOICE_REPLACE",
                                     self.var_taro_voice_replace.get().replace('"', '').replace("'", ""))
+            content = replace_value(content, "TARO_VOICE_PRONUNCIATION",
+                                    self.var_taro_voice_pron.get().replace('"', '').replace("'", ""))
             content = replace_value(content, "GIMMICK_ENABLED",
                                     str(self.var_gimmick_enabled.get()), is_string=False)
             content = replace_value(content, "GIMMICK_WORDS",
