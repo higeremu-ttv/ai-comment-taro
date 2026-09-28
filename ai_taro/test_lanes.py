@@ -1328,6 +1328,15 @@ check("読み上げだけ: 停止ボタンで抜ける", not _ro_thread.is_alive
 check("読み上げだけ: 太郎は何も投稿しない", _tw.sent == [])
 ra_mod.ReadAloudWorker = _orig_worker_cls
 
+# 起動ボタンの種類 → 設定値
+_m = _types.SimpleNamespace(TARO_AI_ENABLED=True, READ_ALOUD_ENABLED=False)
+_gui.BotGUI._apply_run_mode(_m, "hybrid")
+check("▶太郎＋読み上げ: 太郎も読み上げも動く", _m.TARO_AI_ENABLED and _m.READ_ALOUD_ENABLED)
+_gui.BotGUI._apply_run_mode(_m, "read_only")
+check("▶読み上げだけ: 太郎は動かず読み上げだけ", (not _m.TARO_AI_ENABLED) and _m.READ_ALOUD_ENABLED)
+_gui.BotGUI._apply_run_mode(_m, "taro_only")
+check("▶太郎だけ: 今までどおり（読み上げはTTA任せ）", _m.TARO_AI_ENABLED and not _m.READ_ALOUD_ENABLED)
+
 print()
 ok = sum(1 for _, c in results if c)
 print(f"===== 結果: {ok}/{len(results)} 件成功 =====")

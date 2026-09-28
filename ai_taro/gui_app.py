@@ -163,17 +163,26 @@ class BotGUI:
         btn_frame = tk.Frame(parent, bg=self.colors["bg"], pady=10)
         btn_frame.pack(fill="x", padx=8)
 
-        self.start_btn = tk.Button(
-            btn_frame, text="▶  Bot 起動",
-            bg=self.colors["accent"], fg="white",
-            font=("Yu Gothic UI", 11, "bold"),
-            relief="flat", bd=0, padx=24, pady=8,
-            activebackground=self.colors["accent_hover"],
-            activeforeground="white",
-            cursor="hand2",
-            command=self.start_bot
-        )
-        self.start_btn.pack(side="left", padx=(0, 8))
+        # v4.57: 起動のしかたをボタンで選ぶ（設定画面のチェックではなく、押すボタンで決まる）
+        #   太郎＋読み上げ … AIコメント・マイク聞き取り＋コメント読み上げ
+        #   読み上げだけ   … Twitch受信と読み上げのみ（太郎は投稿しない）
+        #   太郎だけ       … 今までどおり（読み上げはTwitchTalkApp・棒読みちゃんに任せる）
+        self.start_btns = {}
+        for mode, label in (("hybrid", "▶ 太郎＋読み上げ"),
+                            ("read_only", "▶ 読み上げだけ"),
+                            ("taro_only", "▶ 太郎だけ")):
+            btn = tk.Button(
+                btn_frame, text=label,
+                bg=self.colors["accent"], fg="white",
+                font=("Yu Gothic UI", 10, "bold"),
+                relief="flat", bd=0, padx=12, pady=8,
+                activebackground=self.colors["accent_hover"],
+                activeforeground="white",
+                cursor="hand2",
+                command=lambda m=mode: self.start_bot(m)
+            )
+            btn.pack(side="left", padx=(0, 6))
+            self.start_btns[mode] = btn
 
         self.stop_btn = tk.Button(
             btn_frame, text="■  Bot 停止",
@@ -323,8 +332,6 @@ class BotGUI:
         self.var_chat_mute_enabled = tk.BooleanVar()
         self.var_viewer_comment_reaction_enabled = tk.BooleanVar()
         self.var_reaction_bot_accounts = tk.StringVar()
-        self.var_read_aloud_enabled = tk.BooleanVar()  # v4.57
-        self.var_taro_ai_enabled = tk.BooleanVar()     # v4.57
         self.var_taro_voice_enabled = tk.BooleanVar()  # v4.57
         self.var_taro_voice_style = tk.StringVar()     # v4.57
         self.var_gimmick_enabled = tk.BooleanVar()
@@ -473,30 +480,9 @@ class BotGUI:
         make_field(sec4, "反応するボットアカウント", self.var_reaction_bot_accounts)
         make_note(sec4, "お知らせ系ボットのみ指定。例: nightbot,streamelements")
 
-        # 読み上げ設定（v4.57）
-        chk_taro_ai_row = tk.Frame(sec4, bg=self.colors["panel"])
-        chk_taro_ai_row.pack(fill="x", padx=12, pady=3)
-        tk.Checkbutton(
-            chk_taro_ai_row, text="太郎（AIのコメント・マイクの聞き取り）を動かす",
-            variable=self.var_taro_ai_enabled,
-            bg=self.colors["panel"], fg=self.colors["text"],
-            selectcolor=self.colors["log_bg"],
-            activebackground=self.colors["panel"],
-            font=("Yu Gothic UI", 10)
-        ).pack(side="left")
-        make_note(sec4, "外すと「読み上げだけ」で動きます（太郎はチャットに投稿しません）")
-
-        chk_read_aloud_row = tk.Frame(sec4, bg=self.colors["panel"])
-        chk_read_aloud_row.pack(fill="x", padx=12, pady=3)
-        tk.Checkbutton(
-            chk_read_aloud_row, text="コメントを太郎が読み上げる（日本語=VOICEVOX / 英語=Gemini）",
-            variable=self.var_read_aloud_enabled,
-            bg=self.colors["panel"], fg=self.colors["text"],
-            selectcolor=self.colors["log_bg"],
-            activebackground=self.colors["panel"],
-            font=("Yu Gothic UI", 10)
-        ).pack(side="left")
-        make_note(sec4, "オンにするときは TwitchTalkApp・棒読みちゃんを起動しない（二重に読まれます）。「設定を保存」してから開始")
+        # 読み上げ設定（v4.57）。太郎を動かすか・読み上げるかは、画面上部の起動ボタンで選ぶ
+        make_note(sec4, "読み上げは画面上部の「▶ 太郎＋読み上げ」「▶ 読み上げだけ」で起動したときに動きます（日本語=VOICEVOX / 英語=Gemini）")
+        make_note(sec4, "そのときは TwitchTalkApp・棒読みちゃんを起動しない（二重に読まれます）")
         make_note(sec4, "配信に乗せるには、OBSに太郎（pythonw.exe）のアプリケーション音声キャプチャが必要です")
 
         chk_taro_voice_row = tk.Frame(sec4, bg=self.colors["panel"])
@@ -509,7 +495,7 @@ class BotGUI:
             activebackground=self.colors["panel"],
             font=("Yu Gothic UI", 10)
         ).pack(side="left")
-        make_note(sec4, "上のチェック（読み上げ）もオンのときだけ働きます。費用の目安: 1配信200回で約40円")
+        make_note(sec4, "「▶ 太郎＋読み上げ」で起動したときだけ働きます。費用の目安: 1配信200回で約40円")
         make_field(sec4, "太郎の声の口調", self.var_taro_voice_style)
         make_note(sec4, "Geminiへの話し方の指示。例: 少しおバカで生意気、人をなめたような憎たらしい口調で")
 
@@ -612,8 +598,6 @@ class BotGUI:
             self.var_chat_mute_enabled.set(getattr(cfg, "CHAT_ACTIVITY_MUTE_ENABLED", True))
             self.var_viewer_comment_reaction_enabled.set(getattr(cfg, "VIEWER_COMMENT_REACTION_ENABLED", True))
             self.var_reaction_bot_accounts.set(getattr(cfg, "REACTION_BOT_ACCOUNTS", "nightbot,streamelements"))
-            self.var_read_aloud_enabled.set(getattr(cfg, "READ_ALOUD_ENABLED", False))
-            self.var_taro_ai_enabled.set(getattr(cfg, "TARO_AI_ENABLED", True))
             self.var_taro_voice_enabled.set(getattr(cfg, "TARO_VOICE_ENABLED", False))
             self.var_taro_voice_style.set(getattr(cfg, "TARO_VOICE_STYLE", ""))
             self.var_gimmick_enabled.set(getattr(cfg, "GIMMICK_ENABLED", True))
@@ -685,10 +669,6 @@ class BotGUI:
                                     str(self.var_viewer_comment_reaction_enabled.get()), is_string=False)
             content = replace_value(content, "REACTION_BOT_ACCOUNTS",
                                     self.var_reaction_bot_accounts.get())
-            content = replace_value(content, "READ_ALOUD_ENABLED",
-                                    str(self.var_read_aloud_enabled.get()), is_string=False)
-            content = replace_value(content, "TARO_AI_ENABLED",
-                                    str(self.var_taro_ai_enabled.get()), is_string=False)
             content = replace_value(content, "TARO_VOICE_ENABLED",
                                     str(self.var_taro_voice_enabled.get()), is_string=False)
             content = replace_value(content, "TARO_VOICE_STYLE",
@@ -761,14 +741,16 @@ class BotGUI:
         except Exception as e:
             messagebox.showerror("エラー", f"設定の保存に失敗しました:\n{e}")
 
-    def start_bot(self):
-        """Botを別スレッドで起動する"""
+    def start_bot(self, mode: str = "hybrid"):
+        """Botを別スレッドで起動する。
+        v4.57: mode = "hybrid"（太郎＋読み上げ）/ "read_only"（読み上げだけ）/ "taro_only"（太郎だけ）"""
         if self.bot_running:
             return
 
         self.bot_running = True
-        self.start_btn.config(state="disabled", bg=self.colors["border"],
-                              fg=self.colors["text_dim"])
+        self.run_mode = mode
+        for btn in self.start_btns.values():
+            btn.config(state="disabled", bg=self.colors["border"], fg=self.colors["text_dim"])
         self.stop_btn.config(state="normal", bg=self.colors["danger"], fg="white")
         self.status_badge.config(text="● 稼働中", fg=self.colors["success"])
 
@@ -821,6 +803,9 @@ class BotGUI:
             _root_logger.setLevel(logging.INFO)
 
             logger = logging.getLogger("gui_bot")
+
+            # v4.57: 押されたボタンで起動のしかたを決める（config.pyの値より優先）
+            self._apply_run_mode(config, getattr(self, 'run_mode', 'hybrid'))
 
             # v4.57: 「読み上げだけ」モード（太郎のAI・マイクを動かさない日）
             if not getattr(config, 'TARO_AI_ENABLED', True):
@@ -1039,6 +1024,19 @@ class BotGUI:
         finally:
             self._cleanup_bot()
 
+    @staticmethod
+    def _apply_run_mode(config, mode: str):
+        """v4.57: 起動ボタンの種類を設定値に反映する"""
+        if mode == "read_only":
+            config.TARO_AI_ENABLED = False
+            config.READ_ALOUD_ENABLED = True
+        elif mode == "taro_only":
+            config.TARO_AI_ENABLED = True
+            config.READ_ALOUD_ENABLED = False
+        else:  # hybrid
+            config.TARO_AI_ENABLED = True
+            config.READ_ALOUD_ENABLED = True
+
     def _run_read_only(self, config, TwitchModule, logger):
         """v4.57: 読み上げだけ動かす（太郎のAIコメント・マイクの聞き取り・俳句・ギミックは動かさない）。
         Twitchの受信と読み上げ係だけを起動する。太郎はチャットに一切投稿しない。
@@ -1111,7 +1109,8 @@ class BotGUI:
         self.root.after(0, self._update_ui_stopped)
 
     def _update_ui_stopped(self):
-        self.start_btn.config(state="normal", bg=self.colors["accent"], fg="white")
+        for btn in self.start_btns.values():
+            btn.config(state="normal", bg=self.colors["accent"], fg="white")
         self.stop_btn.config(state="disabled", bg=self.colors["border"],
                              fg=self.colors["text_dim"])
         self.status_badge.config(text="● 停止中", fg=self.colors["danger"])
