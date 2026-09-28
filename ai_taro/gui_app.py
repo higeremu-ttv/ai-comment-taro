@@ -482,6 +482,7 @@ class BotGUI:
             font=("Yu Gothic UI", 10)
         ).pack(side="left")
         make_note(sec4, "オンにするときは TwitchTalkApp・棒読みちゃんを起動しない（二重に読まれます）。「設定を保存」してから開始")
+        make_note(sec4, "配信に乗せるには、OBSに太郎（pythonw.exe）のアプリケーション音声キャプチャが必要です")
 
         # ギミック参加設定（v4.53）
         chk_gimmick_row = tk.Frame(sec4, bg=self.colors["panel"])
