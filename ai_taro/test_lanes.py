@@ -927,112 +927,72 @@ check("is_engine_running: 例外ならFalse",
       vv.is_engine_running(session=_RaisingSession()) is False)
 
 # ============================================================
-# v4.57 Gemini TTSクライアント（gemini_tts_client）のテスト
-# ネットワークには一切繋がず、genai.Client互換のフェイクでモックする
+# v4.58 Gemini TTSクライアント（gemini_tts_client・HTTP直接）のテスト
+# ネットワークには繋がず、requests互換のフェイクセッション（_FakeSession）でモックする
 # ============================================================
+import base64 as _b64
 import gemini_tts_client as gtts
 
 
-class _FakeInlineData:
-    def __init__(self, data, mime_type="audio/wav"):
-        self.data = data
-        self.mime_type = mime_type
+def _gemini_ok(wav=b"RIFFfakewav"):
+    return _FakeResp(200, json_data={"candidates": [{"content": {"parts": [
+        {"inlineData": {"mimeType": "audio/wav", "data": _b64.b64encode(wav).decode()}}]}}]})
 
 
-class _FakePart:
-    def __init__(self, inline_data=None):
-        self.inline_data = inline_data
-
-
-class _FakeContent:
-    def __init__(self, parts):
-        self.parts = parts
-
-
-class _FakeCandidate:
-    def __init__(self, parts):
-        self.content = _FakeContent(parts)
-
-
-class _FakeGenaiResponse:
-    def __init__(self, candidates):
-        self.candidates = candidates
-
-
-class _FakeModels:
-    def __init__(self, response=None, exc=None):
-        self._response = response
-        self._exc = exc
-        self.calls = []
-
-    def generate_content(self, **kwargs):
-        self.calls.append(kwargs)
-        if self._exc:
-            raise self._exc
-        return self._response
-
-
-class _FakeGenaiClient:
-    def __init__(self, response=None, exc=None):
-        self.models = _FakeModels(response, exc)
-
-
-gtts_ok_client = _FakeGenaiClient(
-    response=_FakeGenaiResponse([_FakeCandidate([_FakePart(_FakeInlineData(b"RIFFfakewav"))])])
-)
+gs = _FakeSession([_gemini_ok()])
 check("Gemini TTS合成が成功するとWAVバイト列が返る",
-      gtts.synthesize("Hello", api_key="dummy", client=gtts_ok_client) == b"RIFFfakewav")
-check("既定モデルはLite（定型・低コスト優先の方針に合わせる）",
-      gtts_ok_client.models.calls[0]["model"] == "gemini-3.8-flash-lite-tts")
-check("既定の声はKore",
-      gtts_ok_client.models.calls[0]["config"].speech_config.voice_config
-      .prebuilt_voice_config.voice_name == "Kore")
+      gtts.synthesize("Hello", api_key="dummy", session=gs) == b"RIFFfakewav")
+_body = gs.calls[0][2]["json"]
+check("既定モデルはLite", gs.calls[0][1].endswith("/gemini-3.8-flash-lite-tts:generateContent"))
+check("声の名前が渡る",
+      _body["generationConfig"]["speechConfig"]["voiceConfig"]["prebuiltVoiceConfig"]["voiceName"] == "Kore")
+check("口調指定なしなら本文だけ（別枠は付かない）", _body["contents"][0]["parts"][0] == {"text": "Hello"})
+check("言語指定なしなら自動判定（languageCodeを付けない）",
+      "languageCode" not in _body["generationConfig"]["speechConfig"])
 
-check("空文字は接続せずNoneを返す",
-      gtts.synthesize("", api_key="dummy", client=_FakeGenaiClient()) is None)
-check("APIキー未設定・クライアント未指定ならNone",
-      gtts.synthesize("Hello", api_key="") is None)
+gs2 = _FakeSession([_gemini_ok()])
+gtts.synthesize("ここで一句", api_key="dummy", style="生意気に", language_code="ja-JP", session=gs2)
+_p = gs2.calls[0][2]["json"]["contents"][0]["parts"][0]
+check("口調は本文とは別枠（speech_metadata.style）で渡す＝読み上げられない",
+      _p["text"] == "ここで一句" and _p["speech_metadata"] == {"style": "生意気に"})
+check("口調の指示文が本文に混ざらない", "生意気" not in _p["text"])
+check("言語を固定できる（ja-JP）",
+      gs2.calls[0][2]["json"]["generationConfig"]["speechConfig"]["languageCode"] == "ja-JP")
 
-gtts_empty_client = _FakeGenaiClient(response=_FakeGenaiResponse([]))
+check("空文字は接続せずNoneを返す", gtts.synthesize("", api_key="dummy", session=_FakeSession([])) is None)
+check("APIキー未設定ならNone", gtts.synthesize("Hello", api_key="", session=_FakeSession([])) is None)
+check("1分あたりの上限（429）ならNone",
+      gtts.synthesize("Hello", api_key="dummy", session=_FakeSession([_FakeResp(429, json_data={})])) is None)
 check("candidatesが空ならNone",
-      gtts.synthesize("Hello", api_key="dummy", client=gtts_empty_client) is None)
-
-gtts_nodata_client = _FakeGenaiClient(
-    response=_FakeGenaiResponse([_FakeCandidate([_FakePart(None)])])
-)
-check("inline_dataが無ければNone",
-      gtts.synthesize("Hello", api_key="dummy", client=gtts_nodata_client) is None)
-
-gtts_error_client = _FakeGenaiClient(exc=ConnectionError("api down"))
+      gtts.synthesize("Hello", api_key="dummy",
+                      session=_FakeSession([_FakeResp(200, json_data={"candidates": []})])) is None)
+check("音声データが無ければNone",
+      gtts.synthesize("Hello", api_key="dummy", session=_FakeSession(
+          [_FakeResp(200, json_data={"candidates": [{"content": {"parts": [{"text": "x"}]}}]})])) is None)
 check("API接続失敗（例外）でも落ちずにNone",
-      gtts.synthesize("Hello", api_key="dummy", client=gtts_error_client) is None)
-
-check("声の表現力が要る場面はflash-ttsを指定できる",
-      gtts.synthesize("Hello", api_key="dummy", model="gemini-3.8-flash-tts",
-                       client=_FakeGenaiClient(
-                           response=_FakeGenaiResponse(
-                               [_FakeCandidate([_FakePart(_FakeInlineData(b"x"))])])
-                       )) == b"x")
+      gtts.synthesize("Hello", api_key="dummy", session=_RaisingSession()) is None)
 
 # ============================================================
-# v4.57 太郎の声（speak_as_taro / build_styled_text）のテスト
+# v4.58 太郎の声（speak_as_taro・読み替え）のテスト
 # ============================================================
-check("口調指定なしならそのまま", gtts.build_styled_text("こんにちは") == "こんにちは")
-check("口調指定があれば頭に付く",
-      gtts.build_styled_text("今日も一句", style="俳句らしく、ゆっくりと")
-      == "（俳句らしく、ゆっくりと）\n今日も一句")
+check("読み替え: ひげさん→ヒゲさん",
+      gtts.apply_replacements("ひげさん下手すぎ", "ひげさん=ヒゲさん") == "ヒゲさん下手すぎ")
+check("読み替えは複数指定できる",
+      gtts.apply_replacements("ひげさんとGG", "ひげさん=ヒゲさん, GG=ジージー") == "ヒゲさんとジージー")
+check("読み替え指定なしならそのまま", gtts.apply_replacements("ひげさん", "") == "ひげさん")
 
-taro_client = _FakeGenaiClient(
-    response=_FakeGenaiResponse([_FakeCandidate([_FakePart(_FakeInlineData(b"taro-voice"))])])
-)
+gs3 = _FakeSession([_gemini_ok(b"taro-voice")])
 check("太郎の声として合成できる",
-      gtts.speak_as_taro("今日も一句", api_key="dummy", style="俳句らしく",
-                          client=taro_client) == b"taro-voice")
-check("太郎の声には口調指示が乗った文章が渡る",
-      "（俳句らしく）" in taro_client.models.calls[0]["contents"])
-check("既定の声はTARO_VOICE定数と一致",
-      taro_client.models.calls[0]["config"].speech_config.voice_config
-      .prebuilt_voice_config.voice_name == gtts.TARO_VOICE)
+      gtts.speak_as_taro("ひげさん、今の一句", api_key="dummy", style="生意気に",
+                         model="gemini-3.8-flash-tts", voice_name="Algieba",
+                         replacements="ひげさん=ヒゲさん", session=gs3) == b"taro-voice")
+_tb = gs3.calls[0][2]["json"]
+check("太郎の声: 読み替え後の文を送る（チャットの文は変えない）",
+      _tb["contents"][0]["parts"][0]["text"] == "ヒゲさん、今の一句")
+check("太郎の声: 既定で日本語固定", _tb["generationConfig"]["speechConfig"]["languageCode"] == "ja-JP")
+check("太郎の声: 上位版モデルとAlgiebaが使われる",
+      gs3.calls[0][1].endswith("/gemini-3.8-flash-tts:generateContent")
+      and _tb["generationConfig"]["speechConfig"]["voiceConfig"]["prebuiltVoiceConfig"]["voiceName"] == "Algieba")
 
 # ============================================================
 # v4.57 読み上げパイプライン（reading_pipeline）のテスト

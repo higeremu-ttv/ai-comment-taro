@@ -11,7 +11,8 @@ Twitchのコメントを受け取るたびに順番待ちの列（キュー）�
   太郎のプロセス（pythonw.exe、実行ファイル名で一致）を拾って乗せる。デスクトップ音声は配信に
   乗らない設定のため、このソースが無いと読み上げは配信で聞こえない（棒読みちゃんも同じ方式で
   BouyomiChan.exe を拾っていた。2026-09-29 OBS設定ファイルで確認）。
-- 太郎の発言（§3）: TARO_VOICE_ENABLED がオンなら Gemini の声（Algieba・生意気な口調）で読む。
+- 太郎の発言（§3）: TARO_VOICE_ENABLED がオンなら Gemini の声（Algieba・生意気な口調・日本語固定）で読む。
+  口調は本文とは別枠で渡す（v4.58。本文に書くと指示文まで読み上げたため）。
   声づくりに5〜7秒かかるため、投稿した瞬間に別の手で作り始め（並行）、再生だけ列の順番を守る。
   その間も視聴者コメントの読み上げは止まらない。Geminiが失敗したらVOICEVOXで読む（黙らない）。
   オフなら視聴者コメントと同じくVOICEVOXで読む（今までのTwitchTalkAppと同じ）。
@@ -66,6 +67,8 @@ class ReadAloudWorker:
         self.taro_voice_name = getattr(config, "TARO_VOICE_NAME", "Algieba")
         self.taro_voice_model = getattr(config, "TARO_VOICE_MODEL", "gemini-3.8-flash-tts")
         self.taro_voice_style = getattr(config, "TARO_VOICE_STYLE", "")
+        self.taro_voice_language = getattr(config, "TARO_VOICE_LANGUAGE", "ja-JP")
+        self.taro_voice_replace = getattr(config, "TARO_VOICE_REPLACE", "")
         self.bot_nick = getattr(config, "BOT_NICK", "")
         # 太郎の声づくり専用の手（再生の列とは別に、先に作り始めておくため）
         self._taro_pool = ThreadPoolExecutor(max_workers=2)
@@ -152,7 +155,8 @@ class ReadAloudWorker:
         future = self._taro_pool.submit(
             self._taro_synth, text, api_key=self.gemini_api_key,
             style=self.taro_voice_style, model=self.taro_voice_model,
-            voice_name=self.taro_voice_name)
+            voice_name=self.taro_voice_name, language_code=self.taro_voice_language,
+            replacements=self.taro_voice_replace)
         self._queue.put(("taro", future, text))
 
     # ------------------------------------------------------------

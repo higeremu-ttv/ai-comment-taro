@@ -31,7 +31,7 @@ class QueueHandler(logging.Handler):
 class BotGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("AIコメント太郎 v4.57")
+        self.root.title("AIコメント太郎 v4.58")
         self.root.geometry("820x660")
         self.root.resizable(True, True)
         self.root.configure(bg="#1a1a2e")
@@ -126,7 +126,7 @@ class BotGUI:
         header = tk.Frame(self.root, bg=self.colors["bg"], pady=10)
         header.pack(fill="x", padx=16)
 
-        tk.Label(header, text="🎮  AIコメント太郎  v4.57",
+        tk.Label(header, text="🎮  AIコメント太郎  v4.58",
                  bg=self.colors["bg"], fg=self.colors["text"],
                  font=("Yu Gothic UI", 16, "bold")).pack(side="left")
 
@@ -334,6 +334,7 @@ class BotGUI:
         self.var_reaction_bot_accounts = tk.StringVar()
         self.var_taro_voice_enabled = tk.BooleanVar()  # v4.57
         self.var_taro_voice_style = tk.StringVar()     # v4.57
+        self.var_taro_voice_replace = tk.StringVar()   # v4.58
         self.var_gimmick_enabled = tk.BooleanVar()
         self.var_gimmick_words = tk.StringVar()
         self.var_speech_gimmicks = tk.StringVar()
@@ -497,7 +498,9 @@ class BotGUI:
         ).pack(side="left")
         make_note(sec4, "「▶ 太郎＋読み上げ」で起動したときだけ働きます。費用の目安: 1配信200回で約40円")
         make_field(sec4, "太郎の声の口調", self.var_taro_voice_style)
-        make_note(sec4, "Geminiへの話し方の指示。例: 少しおバカで生意気、人をなめたような憎たらしい口調で")
+        make_note(sec4, "Geminiへの話し方の指示（声には出ません）。例: 親しい友達にツッコむような、ちょっと生意気な口調で")
+        make_field(sec4, "太郎の声の読み替え", self.var_taro_voice_replace)
+        make_note(sec4, "声にするときだけ置き換える語（チャットの文は変わらない）。「元=読み」をカンマ区切り。例: ひげさん=ヒゲさん")
 
         # ギミック参加設定（v4.53）
         chk_gimmick_row = tk.Frame(sec4, bg=self.colors["panel"])
@@ -600,6 +603,7 @@ class BotGUI:
             self.var_reaction_bot_accounts.set(getattr(cfg, "REACTION_BOT_ACCOUNTS", "nightbot,streamelements"))
             self.var_taro_voice_enabled.set(getattr(cfg, "TARO_VOICE_ENABLED", False))
             self.var_taro_voice_style.set(getattr(cfg, "TARO_VOICE_STYLE", ""))
+            self.var_taro_voice_replace.set(getattr(cfg, "TARO_VOICE_REPLACE", ""))
             self.var_gimmick_enabled.set(getattr(cfg, "GIMMICK_ENABLED", True))
             self.var_gimmick_words.set(getattr(cfg, "GIMMICK_WORDS", "行進,ランダム,おなかすいた"))
             self.var_speech_gimmicks.set(getattr(cfg, "SPEECH_GIMMICKS", "ビクロイ=gg"))
@@ -673,6 +677,8 @@ class BotGUI:
                                     str(self.var_taro_voice_enabled.get()), is_string=False)
             content = replace_value(content, "TARO_VOICE_STYLE",
                                     self.var_taro_voice_style.get().replace('"', '').replace("'", ""))
+            content = replace_value(content, "TARO_VOICE_REPLACE",
+                                    self.var_taro_voice_replace.get().replace('"', '').replace("'", ""))
             content = replace_value(content, "GIMMICK_ENABLED",
                                     str(self.var_gimmick_enabled.get()), is_string=False)
             content = replace_value(content, "GIMMICK_WORDS",
@@ -813,7 +819,7 @@ class BotGUI:
                 return
 
             logger.info("=" * 50)
-            logger.info("AIコメント太郎 v4.57 を起動します（コメント読み上げを統合）")
+            logger.info("AIコメント太郎 v4.58 を起動します（太郎の声の口調漏れを修正）")
             logger.info(f"チャンネル: #{config.CHANNEL_NAME}")
             _engine = getattr(config, 'SPEECH_ENGINE', 'whisper')
             _engine_label = f"faster-whisper {getattr(config, 'WHISPER_MODEL_SIZE', 'medium')}（ローカル）" if _engine == 'whisper' else "Google Web Speech API"
@@ -1042,7 +1048,7 @@ class BotGUI:
         Twitchの受信と読み上げ係だけを起動する。太郎はチャットに一切投稿しない。
         _run_bot の try の中から呼ばれるので、終了時の後片付け（_cleanup_bot）はそちらで行われる"""
         logger.info("=" * 50)
-        logger.info("AIコメント太郎 v4.57 を「読み上げだけ」で起動します")
+        logger.info("AIコメント太郎 v4.58 を「読み上げだけ」で起動します")
         logger.info("（AIのコメント・マイクの聞き取り・俳句/謎かけ・ギミック参加は動かしません）")
         logger.info(f"チャンネル: #{config.CHANNEL_NAME}")
         logger.info("=" * 50)

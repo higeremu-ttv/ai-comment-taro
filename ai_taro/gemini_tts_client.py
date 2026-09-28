@@ -1,109 +1,115 @@
 """
-Gemini TTS クライアント v4.57（§2-3 英語読み上げ・§3 太郎の声の土台）
+Gemini TTS クライアント v4.58（§2-3 英語読み上げ・§3 太郎の声）
 
 英語コメントの読み上げ・太郎自身の声を Gemini TTS で作る。VOICEVOXは英語が
-苦手なため（2026-09-28 おじさん決定、§2）、英語だけこちらを使う。
+苦手なため、英語だけこちらを使う。
 
-【使用SDKについて】
-comment_generator.py 等の既存コードは旧SDK `google.generativeai`（2026-09時点で
-サポート終了）を使っている。TTSは新SDK `google.genai` でのみ動作を実機確認できたため、
-このモジュールだけ新SDKを使う。将来的に既存コードも新SDKへ寄せる余地はあるが、
-それは本改造とは別件（提案は別途）。
+【v4.58: SDKをやめてHTTPで直接呼ぶ形に変更】
+v4.57 は口調の指示を本文の頭に「（口調）」と書き足していたが、これだと Gemini が
+指示文まで声に出して読むことがあった（俳句のセリフで3回中2回。音声を faster-whisper で
+文字起こしして確認）。試した結果（2026-09-29〜30）:
+  - 本文の頭に日本語で書く …… 3回中2回漏れる（v4.57の方式）
+  - 英語の前置き "Say in this tone (…):" …… 3回中2回漏れる
+  - system_instruction …… 全TTSモデルで「Developer instruction is not enabled」で使えない
+  - parts の "speech_metadata": {"style": …} …… 6回中0回。これを採用
+speech_metadata は SDK（google-genai）の型に無いので、VOICEVOXと同じく requests で直接呼ぶ。
+あわせて speechConfig.languageCode を指定できるようにした（太郎の声は ja-JP 固定の方が
+自然と判定された）。
 
-【モデル名について】
-2026-09-29 実際にAPIへ models.list() を投げて確認した、現存するTTS対応モデル：
-  gemini-2.5-flash-preview-tts / gemini-2.5-pro-preview-tts（旧世代）
-  gemini-3.1-flash-tts-preview
-  gemini-3.8-flash-tts / gemini-3.8-flash-lite-tts（最新）
-太郎の他機能の「Lite=定型作業、通常=品質が要る場面」という使い分け（CLAUDE.md）に
-倣い、既定は軽量な gemini-3.8-flash-lite-tts。声の表現力が要る場面（§3 太郎の声の
-俳句・謎かけ等）は呼び出し側で gemini-3.8-flash-tts を指定できるようにしてある。
+【モデル名】2026-09-29 models.list() で確認:
+  gemini-3.8-flash-tts / gemini-3.8-flash-lite-tts（最新）ほか。既定は軽量な lite。
+  上位版 gemini-3.8-flash-tts は1分10回まで（429 GenerateRequestsPerMinutePerProjectPerModel）。
+  失敗時は呼び出し側（read_aloud.py）がVOICEVOXで読む。
 
-レスポンスの形（2026-09-29 実際に1回呼んで確認済み）：
-  candidates[0].content.parts[0].inline_data に mime_type="audio/wav" のWAVバイト列
-  （RIFFヘッダー込み・そのままファイルに保存して再生できる）。
-
-【まだやっていないこと（配信後の統合作業）】
-- gui_app.pyへの配線（英語コメント判定→ここを呼ぶ）
-- Gemini側が落ちたときにVOICEVOXへフォールバックする実配線（§2で決定済みの挙動だが
-  まだコードにしていない）
-- 太郎自身の声としての口調指定（俳句・謎かけの「間」）
+レスポンス: candidates[0].content.parts[0].inlineData.data が base64 の WAV（RIFFヘッダー込み）。
 """
 
+import base64
 import logging
+
+import requests
 
 logger = logging.getLogger(__name__)
 
+API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 DEFAULT_MODEL = "gemini-3.8-flash-lite-tts"
 DEFAULT_VOICE = "Kore"
+DEFAULT_TIMEOUT = 60
 
-# 太郎自身の声（§3）。VOICEVOX（視聴者コメント読み上げ）とは元々エンジンが違うので
-# 声質は自然に分かれるが、声の名前自体は 🟡 まだおじさんが聞いて決めていない仮の値。
-# 配信後に実際に聞き比べて、必要ならここを変える。
-TARO_VOICE = "Kore"
+# 太郎自身の声の既定値（実際の値は config.py の TARO_VOICE_* を使う）
+TARO_VOICE = "Algieba"
 
 
 def synthesize(text: str, api_key: str, model: str = DEFAULT_MODEL,
-               voice_name: str = DEFAULT_VOICE, client=None):
+               voice_name: str = DEFAULT_VOICE, style: str = "", language_code: str = "",
+               timeout: int = DEFAULT_TIMEOUT, session=None):
     """
-    テキストをGemini TTSで読み上げたWAVバイト列にして返す。
-    失敗したら None（呼び出し側でVOICEVOXへのフォールバックを検討すること）。
+    テキストをGemini TTSで読み上げたWAVバイト列にして返す。失敗したら None。
 
-    client: google.genai.Client 互換オブジェクト（テスト用に差し替え可能。
-            省略時は google.genai.Client(api_key=api_key) を新規に作る）
+    style: 話し方の指示。本文とは別の枠（speech_metadata.style）で渡すので読み上げられない
+    language_code: 例 "ja-JP"。空なら Gemini の自動判定
+    session: requests 互換オブジェクト（テスト用に差し替え可能）
     """
     if not text or not text.strip():
         return None
-    if not api_key and client is None:
+    if not api_key:
         logger.warning("Gemini TTS: APIキーが設定されていません")
         return None
 
-    try:
-        from google import genai
-        from google.genai import types
+    part = {"text": text}
+    if style:
+        part["speech_metadata"] = {"style": style}
+    speech_config = {"voiceConfig": {"prebuiltVoiceConfig": {"voiceName": voice_name}}}
+    if language_code:
+        speech_config["languageCode"] = language_code
+    body = {
+        "contents": [{"role": "user", "parts": [part]}],
+        "generationConfig": {"responseModalities": ["AUDIO"], "speechConfig": speech_config},
+    }
 
-        genai_client = client or genai.Client(api_key=api_key)
-        resp = genai_client.models.generate_content(
-            model=model,
-            contents=text,
-            config=types.GenerateContentConfig(
-                response_modalities=["AUDIO"],
-                speech_config=types.SpeechConfig(
-                    voice_config=types.VoiceConfig(
-                        prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=voice_name)
-                    )
-                ),
-            ),
-        )
-        candidates = getattr(resp, "candidates", None)
+    http = session or requests
+    try:
+        resp = http.post(f"{API_BASE}/{model}:generateContent",
+                         params={"key": api_key}, json=body, timeout=timeout)
+        if resp.status_code != 200:
+            # キーが混ざらないよう本文の先頭だけ残す（429=1分あたりの上限、等の切り分け用）
+            logger.warning(f"Gemini TTS エラー: HTTP {resp.status_code} {(resp.text or '')[:120]}")
+            return None
+        data = resp.json()
+        candidates = data.get("candidates") or []
         if not candidates:
             logger.warning("Gemini TTS: 応答にcandidatesがありません")
             return None
-        parts = candidates[0].content.parts
-        if not parts or not getattr(parts[0], "inline_data", None):
+        parts = (candidates[0].get("content") or {}).get("parts") or []
+        inline = parts[0].get("inlineData") if parts else None
+        if not inline or not inline.get("data"):
             logger.warning("Gemini TTS: 応答に音声データがありません")
             return None
-        return parts[0].inline_data.data
-
+        return base64.b64decode(inline["data"])
     except Exception as e:
-        logger.warning(f"Gemini TTSに接続できません: {e}")
+        logger.warning(f"Gemini TTSに接続できません: {type(e).__name__}")
         return None
 
 
-def build_styled_text(text: str, style: str = "") -> str:
-    """
-    口調の指示を文章に含める（§3「俳句・謎かけは口調を指示」）。
-    Gemini TTSは指示を専用の項目ではなく地の文で受け取る作りのため、
-    話し方の指示を頭に付けて渡す。
-    🔍 実際に聞いてどのくらい効くかは配信後の確認事項（音を出して初めて分かるため）。
-    """
-    if not style:
+def apply_replacements(text: str, replacements: str) -> str:
+    """声にするときだけの読み替え。書式は "ひげさん=ヒゲさん,別の語=読み"（カンマ区切り）。
+    チャットに投稿する文は変えない。Geminiの読み方がおかしい語を直すために使う"""
+    if not text or not replacements:
         return text
-    return f"（{style}）\n{text}"
+    for pair in replacements.split(","):
+        if "=" not in pair:
+            continue
+        src, dst = pair.split("=", 1)
+        src, dst = src.strip(), dst.strip()
+        if src:
+            text = text.replace(src, dst)
+    return text
 
 
-def speak_as_taro(text: str, api_key: str, style: str = "",
-                   model: str = DEFAULT_MODEL, voice_name: str = TARO_VOICE, client=None):
-    """太郎自身の声として読み上げる（§3）。styleは俳句・謎かけ等の口調指示。"""
-    styled = build_styled_text(text, style)
-    return synthesize(styled, api_key=api_key, model=model, voice_name=voice_name, client=client)
+def speak_as_taro(text: str, api_key: str, style: str = "", model: str = DEFAULT_MODEL,
+                  voice_name: str = TARO_VOICE, language_code: str = "ja-JP",
+                  replacements: str = "", session=None):
+    """太郎自身の声として読み上げる（§3）。口調(style)は別枠で渡すので声に出ない"""
+    return synthesize(apply_replacements(text, replacements), api_key=api_key, model=model,
+                      voice_name=voice_name, style=style, language_code=language_code,
+                      session=session)
