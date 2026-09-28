@@ -297,7 +297,7 @@ TARO_VOICE_ENABLED = False
 # ＝「憎たらしい」系は皮肉っぽすぎたため。管理画面の「太郎の声の口調」で変更可）
 TARO_VOICE_NAME = "Algieba"
 TARO_VOICE_MODEL = "gemini-3.8-flash-tts"
-TARO_VOICE_STYLE = "親しい友達にツッコむような、ちょっと生意気な口調で"
+TARO_VOICE_STYLE = "親しい友達にツッコむような、ちょっと生意気で空気読めてない口調で"
 
 # 太郎の声の言語（日本語固定の方が自然と判定。2026-09-30）
 TARO_VOICE_LANGUAGE = "ja-JP"
