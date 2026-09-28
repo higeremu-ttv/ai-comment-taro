@@ -817,6 +817,41 @@ with open(_broken_path, "w", encoding="utf-8") as _f:
 rd_recovered = rd.load_dictionary(_RD_TEST_DIR)
 check("壊れたJSONでも初期データで復旧する", rd_recovered["words"].get("草") == "くさ")
 
+# ============================================================
+# v4.57 読み上げ除外リスト（reading_exclusions）のテスト
+# ============================================================
+import reading_exclusions as re_mod
+
+_RE_TEST_DIR = '/tmp/taro_test_reading_exclusions'
+shutil.rmtree(_RE_TEST_DIR, ignore_errors=True)
+os.makedirs(_RE_TEST_DIR, exist_ok=True)
+
+re_data = re_mod.load_exclusions(_RE_TEST_DIR)
+check("初回読み込みで除外リストファイルが作られる",
+      os.path.exists(os.path.join(_RE_TEST_DIR, re_mod.EXCLUSIONS_FILE)))
+check("初期データにTTAで確認した4人が入っている",
+      set(re_data["excluded_users"]) == {"wizebot", "higeremu_translate", "sery_bot", "higeremu_tr"})
+
+check("除外対象は読まない", re_mod.should_read("higeremu_tr", re_data) is False)
+check("大文字小文字を区別しない", re_mod.should_read("HIGEREMU_TR", re_data) is False)
+check("除外対象でなければ読む", re_mod.should_read("petil_momokira", re_data) is True)
+check("空のユーザー名は読む扱い", re_mod.should_read("", re_data) is True)
+
+re_mod.add_exclusion(re_data, "test_bad_bot")
+check("除外を追加できる", re_mod.should_read("test_bad_bot", re_data) is False)
+re_mod.add_exclusion(re_data, "TEST_BAD_BOT")
+check("同じ人を大文字小文字違いで二重追加しない",
+      len([u for u in re_data["excluded_users"] if u.lower() == "test_bad_bot"]) == 1)
+
+re_mod.remove_exclusion(re_data, "wizebot")
+check("除外を解除できる", re_mod.should_read("wizebot", re_data) is True)
+
+re_mod.save_exclusions(re_data, _RE_TEST_DIR)
+re_reloaded = re_mod.load_exclusions(_RE_TEST_DIR)
+check("保存して読み直しても内容が保たれる",
+      "test_bad_bot" in [u.lower() for u in re_reloaded["excluded_users"]]
+      and "wizebot" not in [u.lower() for u in re_reloaded["excluded_users"]])
+
 print()
 ok = sum(1 for _, c in results if c)
 print(f"===== 結果: {ok}/{len(results)} 件成功 =====")

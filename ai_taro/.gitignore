@@ -31,3 +31,6 @@ learned_profile.json
 
 # 読み上げ辞書の実データ（v4.57・視聴者名などを含みうるためgitignore。配布版には見本だけ同梱）
 reading_dictionary.json
+
+# 読み上げ除外リストの実データ（v4.57・視聴者アカウント名を含むためgitignore）
+reading_exclusions.json
