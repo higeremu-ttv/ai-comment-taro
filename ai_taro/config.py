@@ -306,6 +306,12 @@ TARO_VOICE_LANGUAGE = "ja-JP"
 # ひげさん→ヒゲさん: ひらがなだとイントネーションがおかしかったため（4通り聞き比べ、2026-09-30）
 TARO_VOICE_REPLACE = "ひげさん=ヒゲさん"
 
+# 読み上げの声の大きさをそろえる（VOICEVOXとGeminiで大きさが違い、Geminiはセリフごとにもばらつくため）
+# 全部の声を同じ平均の大きさ（dBFS。0が最大、数字が小さいほど静か）にしてから鳴らす。
+# 全体の音量はOBSの「コメント太郎読み上げ」のつまみで合わせる。-21 はVOICEVOXの素の大きさとほぼ同じ
+READ_ALOUD_NORMALIZE = True
+READ_ALOUD_TARGET_DBFS = -21.0
+
 # 日本語はこの文字数を超えたら「以下略」（棒読みちゃんの今の設定と同じ30。0で切らない）
 READ_ALOUD_MAX_CHARS_JA = 30
 

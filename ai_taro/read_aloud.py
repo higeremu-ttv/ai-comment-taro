@@ -42,6 +42,42 @@ def _play_wav(wav: bytes):
     winsound.PlaySound(wav, winsound.SND_MEMORY)
 
 
+def normalize_wav(wav: bytes, target_dbfs: float = -21.0, peak_dbfs: float = -3.0) -> bytes:
+    """v4.58: 声の大きさをそろえる。
+    VOICEVOXは平均 約-21.5dBFSで安定しているが、Geminiは -13〜-19dBFS とセリフごとにばらつき、
+    しかも大きい（2026-09-30 実測）。太郎の音はOBSで1本のソースにまとまるため、OBS側では
+    エンジンごとに調整できない。鳴らす直前に、声の部分の平均の大きさを target_dbfs にそろえる。
+    大きくしすぎて割れないよう、一番大きいところは peak_dbfs までに抑える。
+    16bitのWAV以外・読めないデータはそのまま返す（黙るよりまし）"""
+    try:
+        import io
+        import wave
+        import numpy as np
+        with wave.open(io.BytesIO(wav)) as w:
+            params = w.getparams()
+            if params.sampwidth != 2:
+                return wav
+            frames = w.readframes(params.nframes)
+        x = np.frombuffer(frames, dtype=np.int16).astype(np.float64) / 32768.0
+        voiced = x[np.abs(x) > 0.01]  # 無音部分は平均に入れない
+        if len(voiced) == 0:
+            return wav
+        rms = float(np.sqrt(np.mean(voiced ** 2)))
+        gain = (10 ** (target_dbfs / 20)) / rms
+        peak = float(np.max(np.abs(x)))
+        if peak * gain > 10 ** (peak_dbfs / 20):
+            gain = (10 ** (peak_dbfs / 20)) / peak
+        y = np.clip(x * gain, -1.0, 1.0)
+        out = io.BytesIO()
+        with wave.open(out, "wb") as w:
+            w.setparams(params)
+            w.writeframes((y * 32767).astype(np.int16).tobytes())
+        return out.getvalue()
+    except Exception as e:
+        logger.debug(f"音量そろえをスキップ: {e}")
+        return wav
+
+
 class ReadAloudWorker:
 
     def __init__(self, config, gemini_api_key: str = "", base_dir: str = "",
@@ -62,6 +98,8 @@ class ReadAloudWorker:
         self.max_queue = getattr(config, "READ_ALOUD_MAX_QUEUE", 50)
         self.max_chars_ja = getattr(config, "READ_ALOUD_MAX_CHARS_JA", 30)
         self.english_voice = getattr(config, "READ_ALOUD_ENGLISH_VOICE", "Puck")
+        self.normalize_enabled = getattr(config, "READ_ALOUD_NORMALIZE", True)
+        self.target_dbfs = getattr(config, "READ_ALOUD_TARGET_DBFS", -21.0)
         self._taro_synth = taro_synth
         self.taro_voice_enabled = getattr(config, "TARO_VOICE_ENABLED", False)
         self.taro_voice_name = getattr(config, "TARO_VOICE_NAME", "Algieba")
@@ -199,6 +237,8 @@ class ReadAloudWorker:
                         gemini_synthesize=self._gemini_english,
                         emote_names=emote_names, max_chars_ja=self.max_chars_ja)
                 if wav:
+                    if self.normalize_enabled:
+                        wav = normalize_wav(wav, self.target_dbfs)
                     self._play(wav)
             except Exception as e:
                 logger.warning(f"読み上げに失敗: {e}")

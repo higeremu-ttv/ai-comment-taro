@@ -1288,6 +1288,37 @@ check("読み上げだけ: 停止ボタンで抜ける", not _ro_thread.is_alive
 check("読み上げだけ: 太郎は何も投稿しない", _tw.sent == [])
 ra_mod.ReadAloudWorker = _orig_worker_cls
 
+# v4.58 声の大きさをそろえる（normalize_wav）
+import io as _io
+import wave as _wave
+import numpy as _np
+
+
+def _make_wav(amp, sec=1.0, rate=24000):
+    t = _np.arange(int(rate * sec)) / rate
+    y = (amp * _np.sin(2 * _np.pi * 220 * t) * 32767).astype(_np.int16)
+    b = _io.BytesIO()
+    with _wave.open(b, "wb") as w:
+        w.setnchannels(1); w.setsampwidth(2); w.setframerate(rate); w.writeframes(y.tobytes())
+    return b.getvalue()
+
+
+def _level(wav):
+    with _wave.open(_io.BytesIO(wav)) as w:
+        x = _np.frombuffer(w.readframes(w.getnframes()), dtype=_np.int16).astype(float) / 32768
+    v = x[_np.abs(x) > 0.01]
+    return 20 * _np.log10(_np.sqrt(_np.mean(v ** 2))), 20 * _np.log10(_np.max(_np.abs(x)))
+
+
+_loud = ra_mod.normalize_wav(_make_wav(0.8), -21.0)    # Geminiのような大きい声
+_quiet = ra_mod.normalize_wav(_make_wav(0.05), -21.0)  # 小さい声
+check("大きい声は-21dBFSまで下がる", abs(_level(_loud)[0] - (-21.0)) < 0.5)
+check("小さい声は-21dBFSまで上がる", abs(_level(_quiet)[0] - (-21.0)) < 0.5)
+check("そろえても割れない（一番大きいところは-3dBFS以下）",
+      _level(ra_mod.normalize_wav(_make_wav(0.02), -3.0))[1] <= -2.9)
+check("WAVでないデータはそのまま通す", ra_mod.normalize_wav(b"not a wav") == b"not a wav")
+check("無音はそのまま", ra_mod.normalize_wav(_make_wav(0.0)) == _make_wav(0.0))
+
 # v4.58 読み上げテストボタン
 _played_d = []
 wd = ra_mod.ReadAloudWorker(_TaroOffCfg(), gemini_api_key="x", base_dir=_ra_dir,
