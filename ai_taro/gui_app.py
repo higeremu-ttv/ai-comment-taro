@@ -364,6 +364,7 @@ class BotGUI:
         self.var_taro_voice_style = tk.StringVar()     # v4.57
         self.var_taro_voice_replace = tk.StringVar()   # v4.58
         self.var_taro_voice_pron = tk.StringVar()      # v4.58
+        self.var_read_max_chars = tk.StringVar()       # v4.59
         self.var_gimmick_enabled = tk.BooleanVar()
         self.var_gimmick_words = tk.StringVar()
         self.var_speech_gimmicks = tk.StringVar()
@@ -514,6 +515,8 @@ class BotGUI:
         make_note(sec4, "読み上げは画面上部の「▶ 太郎＋読み上げ」「▶ 読み上げだけ」で起動したときに動きます（日本語=VOICEVOX / 英語=Gemini）")
         make_note(sec4, "そのときは TwitchTalkApp・棒読みちゃんを起動しない（二重に読まれます）")
         make_note(sec4, "配信に乗せるには、OBSに太郎（pythonw.exe）のアプリケーション音声キャプチャが必要です")
+        make_field(sec4, "読み上げの最大文字数", self.var_read_max_chars)
+        make_note(sec4, "日本語のコメントをこの文字数で切って「以下略」にします（0で切らない）。80文字で約10〜15秒")
 
         chk_taro_voice_row = tk.Frame(sec4, bg=self.colors["panel"])
         chk_taro_voice_row.pack(fill="x", padx=12, pady=3)
@@ -636,6 +639,7 @@ class BotGUI:
             self.var_taro_voice_style.set(getattr(cfg, "TARO_VOICE_STYLE", ""))
             self.var_taro_voice_replace.set(getattr(cfg, "TARO_VOICE_REPLACE", ""))
             self.var_taro_voice_pron.set(getattr(cfg, "TARO_VOICE_PRONUNCIATION", ""))
+            self.var_read_max_chars.set(str(getattr(cfg, "READ_ALOUD_MAX_CHARS_JA", 80)))
             self.var_gimmick_enabled.set(getattr(cfg, "GIMMICK_ENABLED", True))
             self.var_gimmick_words.set(getattr(cfg, "GIMMICK_WORDS", "行進,ランダム,おなかすいた"))
             self.var_speech_gimmicks.set(getattr(cfg, "SPEECH_GIMMICKS", "ビクロイ=gg"))
@@ -711,6 +715,10 @@ class BotGUI:
                                     self.var_taro_voice_style.get().replace('"', '').replace("'", ""))
             content = replace_value(content, "TARO_VOICE_REPLACE",
                                     self.var_taro_voice_replace.get().replace('"', '').replace("'", ""))
+            # 数字以外が入ると config.py が壊れて太郎が起動しなくなるので、数字のときだけ保存
+            _max_chars = self.var_read_max_chars.get().strip()
+            if _max_chars.isdigit():
+                content = replace_value(content, "READ_ALOUD_MAX_CHARS_JA", _max_chars, is_string=False)
             content = replace_value(content, "TARO_VOICE_PRONUNCIATION",
                                     self.var_taro_voice_pron.get().replace('"', '').replace("'", ""))
             content = replace_value(content, "GIMMICK_ENABLED",

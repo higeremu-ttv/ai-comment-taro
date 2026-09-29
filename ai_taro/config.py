@@ -329,8 +329,9 @@ VC_ANNOUNCE = True                 # 声で切り替えたとき、チャット�
 READ_ALOUD_NORMALIZE = True
 READ_ALOUD_TARGET_DBFS = -21.0
 
-# 日本語はこの文字数を超えたら「以下略」（棒読みちゃんの今の設定と同じ30。0で切らない）
-READ_ALOUD_MAX_CHARS_JA = 30
+# 日本語はこの文字数を超えたら「以下略」（0で切らない）。管理画面で変更可
+# 棒読みちゃん時代は30。「もっと上げていい」（2026-09-30）で80に。80文字でVOICEVOX約10〜15秒
+READ_ALOUD_MAX_CHARS_JA = 80
 
 # 読み上げ待ちがこの件数を超えたら、新しいコメントは読まずに捨てる（荒らし・大量コメント対策）
 READ_ALOUD_MAX_QUEUE = 50
