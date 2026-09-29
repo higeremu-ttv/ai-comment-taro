@@ -963,6 +963,26 @@ check("空文字は接続せずNoneを返す", gtts.synthesize("", api_key="dumm
 check("APIキー未設定ならNone", gtts.synthesize("Hello", api_key="", session=_FakeSession([])) is None)
 check("1分あたりの上限（429）ならNone",
       gtts.synthesize("Hello", api_key="dummy", session=_FakeSession([_FakeResp(429, json_data={})])) is None)
+
+# v4.59 1分あたりの回数を数える
+gtts._reset_rate_state()
+gtts.set_rate_limit("m-test", 2)
+_rs = _FakeSession([_gemini_ok(), _gemini_ok(), _gemini_ok()])
+_r1 = gtts.synthesize("a", api_key="k", model="m-test", session=_rs)
+_r2 = gtts.synthesize("b", api_key="k", model="m-test", session=_rs)
+_r3 = gtts.synthesize("c", api_key="k", model="m-test", session=_rs)
+check("1分の回数: 決めた回数までは使う", _r1 and _r2 and gtts.calls_last_minute("m-test") == 2)
+check("1分の回数: 超えそうなら頼まずに見送る（Geminiに断られる前に止める）",
+      _r3 is None and len(_rs.calls) == 2)
+check("1分の回数: 制限のないモデルは数えるだけで止めない",
+      gtts.synthesize("d", api_key="k", model="free", session=_FakeSession([_gemini_ok()])) == b"RIFFfakewav")
+gtts._reset_rate_state()
+_rs429 = _FakeSession([_FakeResp(429, json_data={"error": {"details": [{"retryDelay": "27s"}]}}), _gemini_ok()])
+gtts.synthesize("e", api_key="k", model="m429", session=_rs429)
+check("429で言われた待ち時間の間は、そのモデルを使わない",
+      gtts.synthesize("f", api_key="k", model="m429", session=_rs429) is None and len(_rs429.calls) == 1)
+gtts._reset_rate_state()
+
 check("candidatesが空ならNone",
       gtts.synthesize("Hello", api_key="dummy",
                       session=_FakeSession([_FakeResp(200, json_data={"candidates": []})])) is None)

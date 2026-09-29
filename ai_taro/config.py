@@ -299,6 +299,9 @@ TARO_VOICE_NAME = "Algieba"
 TARO_VOICE_MODEL = "gemini-3.8-flash-tts"
 # 上位版が上限（1分10回）等で失敗したときに作り直すモデル（上限は別枠）。それも失敗したらVOICEVOX
 TARO_VOICE_FALLBACK_MODEL = "gemini-3.8-flash-lite-tts"
+# 太郎の声（上位版）を1分に何回まで使うか。上位版の上限は1分10回なので余裕を見て8。
+# 超えそうなときは断られる前に軽量版で作る（管理画面で変更可。0で数えない）
+TARO_VOICE_MAX_PER_MINUTE = 8
 TARO_VOICE_STYLE = "親しい友達にツッコむような、ちょっと生意気で空気読めてない口調で"
 
 # 太郎の声の言語（日本語固定の方が自然と判定。2026-09-30）

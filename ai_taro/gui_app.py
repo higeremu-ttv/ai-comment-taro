@@ -365,6 +365,7 @@ class BotGUI:
         self.var_taro_voice_replace = tk.StringVar()   # v4.58
         self.var_taro_voice_pron = tk.StringVar()      # v4.58
         self.var_read_max_chars = tk.StringVar()       # v4.59
+        self.var_taro_voice_rpm = tk.StringVar()       # v4.59
         self.var_gimmick_enabled = tk.BooleanVar()
         self.var_gimmick_words = tk.StringVar()
         self.var_speech_gimmicks = tk.StringVar()
@@ -533,6 +534,8 @@ class BotGUI:
         make_note(sec4, "Geminiへの話し方の指示（声には出ません）。例: 親しい友達にツッコむような、ちょっと生意気な口調で")
         make_field(sec4, "太郎の声の読み替え", self.var_taro_voice_replace)
         make_note(sec4, "声にするときだけ置き換える語（チャットの文は変わらない）。「元=読み」をカンマ区切り。例: ひげさん=ヒゲさん")
+        make_field(sec4, "太郎の声 1分あたりの回数", self.var_taro_voice_rpm)
+        make_note(sec4, "Gemini上位版の上限は1分10回。これを超えそうなときは軽量版の声で作ります（0で数えない）")
         make_field(sec4, "太郎の声の読み方", self.var_taro_voice_pron)
         make_note(sec4, "抑揚の指示（声には出ません）。例: 「ヒゲさん」は「ヒ」を低く、「ゲさん」を高く平らに読む")
 
@@ -639,7 +642,8 @@ class BotGUI:
             self.var_taro_voice_style.set(getattr(cfg, "TARO_VOICE_STYLE", ""))
             self.var_taro_voice_replace.set(getattr(cfg, "TARO_VOICE_REPLACE", ""))
             self.var_taro_voice_pron.set(getattr(cfg, "TARO_VOICE_PRONUNCIATION", ""))
-            self.var_read_max_chars.set(str(getattr(cfg, "READ_ALOUD_MAX_CHARS_JA", 80)))
+            self.var_read_max_chars.set(str(getattr(cfg, "READ_ALOUD_MAX_CHARS_JA", 150)))
+            self.var_taro_voice_rpm.set(str(getattr(cfg, "TARO_VOICE_MAX_PER_MINUTE", 8)))
             self.var_gimmick_enabled.set(getattr(cfg, "GIMMICK_ENABLED", True))
             self.var_gimmick_words.set(getattr(cfg, "GIMMICK_WORDS", "行進,ランダム,おなかすいた"))
             self.var_speech_gimmicks.set(getattr(cfg, "SPEECH_GIMMICKS", "ビクロイ=gg"))
@@ -719,6 +723,9 @@ class BotGUI:
             _max_chars = self.var_read_max_chars.get().strip()
             if _max_chars.isdigit():
                 content = replace_value(content, "READ_ALOUD_MAX_CHARS_JA", _max_chars, is_string=False)
+            _rpm = self.var_taro_voice_rpm.get().strip()
+            if _rpm.isdigit():
+                content = replace_value(content, "TARO_VOICE_MAX_PER_MINUTE", _rpm, is_string=False)
             content = replace_value(content, "TARO_VOICE_PRONUNCIATION",
                                     self.var_taro_voice_pron.get().replace('"', '').replace("'", ""))
             content = replace_value(content, "GIMMICK_ENABLED",

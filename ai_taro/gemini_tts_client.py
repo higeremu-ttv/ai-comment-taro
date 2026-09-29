@@ -26,10 +26,80 @@ speech_metadata は SDK（google-genai）の型に無いので、VOICEVOXと同�
 
 import base64
 import logging
+import threading
+import time
+from collections import deque
 
 import requests
 
 logger = logging.getLogger(__name__)
+
+# ------------------------------------------------------------
+# v4.59: 1分あたりの回数を数える（上位版は1分10回まで。断られる前に自分で止める）
+# ------------------------------------------------------------
+_rate_lock = threading.Lock()
+_rate_limits = {}      # {model: 1分あたりに使ってよい回数}（set_rate_limit で設定。未設定は数えるだけ）
+_rate_calls = {}       # {model: deque[頼んだ時刻]}
+_blocked_until = {}    # {model: この時刻までは使わない}（429で言われた待ち時間）
+
+
+def set_rate_limit(model: str, per_minute: int):
+    """このモデルを1分に何回まで使うか（0以下なら制限しない）"""
+    with _rate_lock:
+        if per_minute and per_minute > 0:
+            _rate_limits[model] = int(per_minute)
+        else:
+            _rate_limits.pop(model, None)
+
+
+def calls_last_minute(model: str) -> int:
+    with _rate_lock:
+        q = _rate_calls.get(model)
+        if not q:
+            return 0
+        now = time.time()
+        while q and now - q[0] > 60:
+            q.popleft()
+        return len(q)
+
+
+def _try_reserve(model: str) -> bool:
+    """今このモデルを使ってよいか。よければ回数に数えて True"""
+    now = time.time()
+    with _rate_lock:
+        if now < _blocked_until.get(model, 0):
+            logger.info(f"Gemini TTS（{model}）: 上限の待ち時間中のため使いません"
+                        f"（あと{int(_blocked_until[model] - now)}秒）")
+            return False
+        q = _rate_calls.setdefault(model, deque())
+        while q and now - q[0] > 60:
+            q.popleft()
+        limit = _rate_limits.get(model)
+        if limit and len(q) >= limit:
+            logger.info(f"Gemini TTS（{model}）: 1分あたり{limit}回に達したので、今回は使いません")
+            return False
+        q.append(now)
+        return True
+
+
+def _learn_from_429(model: str, resp):
+    """429の本文から待ち時間を読み取り、その間はこのモデルを使わない"""
+    delay = 60.0
+    try:
+        for d in resp.json().get("error", {}).get("details", []):
+            rd = d.get("retryDelay")
+            if rd:
+                delay = float(str(rd).rstrip("s")) + 1
+    except Exception:
+        pass
+    with _rate_lock:
+        _blocked_until[model] = time.time() + delay
+
+
+def _reset_rate_state():
+    """テスト用"""
+    with _rate_lock:
+        _rate_limits.clear(); _rate_calls.clear(); _blocked_until.clear()
 
 API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 DEFAULT_MODEL = "gemini-3.8-flash-lite-tts"
@@ -67,12 +137,17 @@ def synthesize(text: str, api_key: str, model: str = DEFAULT_MODEL,
         "generationConfig": {"responseModalities": ["AUDIO"], "speechConfig": speech_config},
     }
 
+    if not _try_reserve(model):
+        return None
+
     http = session or requests
     try:
         resp = http.post(f"{API_BASE}/{model}:generateContent",
                          params={"key": api_key}, json=body, timeout=timeout)
         if resp.status_code != 200:
             logger.warning(f"Gemini TTS エラー（{model}）: {_describe_error(resp)}")
+            if resp.status_code == 429:
+                _learn_from_429(model, resp)
             return None
         data = resp.json()
         candidates = data.get("candidates") or []

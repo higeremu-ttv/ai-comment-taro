@@ -105,6 +105,9 @@ class ReadAloudWorker:
         self.taro_voice_name = getattr(config, "TARO_VOICE_NAME", "Algieba")
         self.taro_voice_model = getattr(config, "TARO_VOICE_MODEL", "gemini-3.8-flash-tts")
         self.taro_voice_fallback_model = getattr(config, "TARO_VOICE_FALLBACK_MODEL", "gemini-3.8-flash-lite-tts")
+        # v4.59: 太郎の声（上位版）を1分に何回まで使うか。超えそうなら断られる前に軽量版へ
+        gemini_tts_client.set_rate_limit(self.taro_voice_model,
+                                         getattr(config, "TARO_VOICE_MAX_PER_MINUTE", 8))
         self.taro_voice_style = getattr(config, "TARO_VOICE_STYLE", "")
         self.taro_voice_language = getattr(config, "TARO_VOICE_LANGUAGE", "ja-JP")
         self.taro_voice_replace = getattr(config, "TARO_VOICE_REPLACE", "")
