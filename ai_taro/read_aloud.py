@@ -96,7 +96,7 @@ class ReadAloudWorker:
         self.dictionary = reading_dictionary.load_dictionary(self.base_dir)
         self.exclusions = reading_exclusions.load_exclusions(self.base_dir)
         self.max_queue = getattr(config, "READ_ALOUD_MAX_QUEUE", 50)
-        self.max_chars_ja = getattr(config, "READ_ALOUD_MAX_CHARS_JA", 80)
+        self.max_chars_ja = getattr(config, "READ_ALOUD_MAX_CHARS_JA", 150)
         self.english_voice = getattr(config, "READ_ALOUD_ENGLISH_VOICE", "Puck")
         self.normalize_enabled = getattr(config, "READ_ALOUD_NORMALIZE", True)
         self.target_dbfs = getattr(config, "READ_ALOUD_TARGET_DBFS", -21.0)

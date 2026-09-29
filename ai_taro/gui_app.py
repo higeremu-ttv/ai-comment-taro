@@ -516,7 +516,7 @@ class BotGUI:
         make_note(sec4, "そのときは TwitchTalkApp・棒読みちゃんを起動しない（二重に読まれます）")
         make_note(sec4, "配信に乗せるには、OBSに太郎（pythonw.exe）のアプリケーション音声キャプチャが必要です")
         make_field(sec4, "読み上げの最大文字数", self.var_read_max_chars)
-        make_note(sec4, "日本語のコメントをこの文字数で切って「以下略」にします（0で切らない）。80文字で約10〜15秒")
+        make_note(sec4, "日本語のコメントをこの文字数で切って「以下略」にします（0で切らない）")
 
         chk_taro_voice_row = tk.Frame(sec4, bg=self.colors["panel"])
         chk_taro_voice_row.pack(fill="x", padx=12, pady=3)
