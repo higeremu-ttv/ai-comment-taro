@@ -180,11 +180,12 @@ class ReadAloudWorker:
     # ------------------------------------------------------------
     # 受け付け（Twitchの受信スレッドから呼ばれる。すぐ戻る）
     # ------------------------------------------------------------
-    def enqueue_comment(self, username: str, text: str, emote_names=None):
+    def enqueue_comment(self, username: str, text: str, emote_names=None, max_chars=None):
+        """max_chars: 日本語を何文字で切るか（None=設定の値、0=切らない。太郎自身の発言は0）"""
         if self._queue.qsize() >= self.max_queue:
             logger.warning("読み上げの列が詰まっているため、このコメントは読みません")
             return
-        self._queue.put(("comment", username, text, emote_names))
+        self._queue.put(("comment", username, text, emote_names, max_chars))
 
     def enqueue_wav(self, wav: bytes):
         """合成済みの音声を列に並べる"""
@@ -200,7 +201,7 @@ class ReadAloudWorker:
         if not text:
             return
         if not self.taro_voice_enabled:
-            self.enqueue_comment(self.bot_nick, text)
+            self.enqueue_comment(self.bot_nick, text, max_chars=0)  # 太郎自身の発言は切らない
             return
         future = self._taro_pool.submit(
             self._taro_synth, text, api_key=self.gemini_api_key,
@@ -244,14 +245,15 @@ class ReadAloudWorker:
                             self.bot_nick, text, gemini_api_key=self.gemini_api_key,
                             dictionary_data=self.dictionary, exclusions_data=self.exclusions,
                             gemini_synthesize=self._gemini_english,
-                            emote_names=None, max_chars_ja=self.max_chars_ja)
+                            emote_names=None, max_chars_ja=0)  # 太郎自身の発言は切らない
                 else:
-                    _, username, text, emote_names = item
+                    _, username, text, emote_names, max_chars = item
                     wav = self._pipeline(
                         username, text, gemini_api_key=self.gemini_api_key,
                         dictionary_data=self.dictionary, exclusions_data=self.exclusions,
                         gemini_synthesize=self._gemini_english,
-                        emote_names=emote_names, max_chars_ja=self.max_chars_ja)
+                        emote_names=emote_names,
+                        max_chars_ja=self.max_chars_ja if max_chars is None else max_chars)
                 if wav:
                     if self.normalize_enabled:
                         wav = normalize_wav(wav, self.target_dbfs)

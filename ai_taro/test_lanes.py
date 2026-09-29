@@ -1337,6 +1337,31 @@ check("読み上げだけ: 停止ボタンで抜ける", not _ro_thread.is_alive
 check("読み上げだけ: 太郎は何も投稿しない", _tw.sent == [])
 ra_mod.ReadAloudWorker = _orig_worker_cls
 
+# v4.59 太郎自身の発言は文字数で切らない（視聴者コメントだけ切る）
+_mc = []
+
+
+def _pipe_mc(username, text, **kw):
+    _mc.append((username, kw.get("max_chars_ja")))
+    return b"x"
+
+
+for _cfgc, _synth in ((_TaroOffCfg, None), (_TaroCfg, lambda text, **kw: None)):
+    _mc.clear()
+    _kw = dict(taro_synth=_synth) if _synth else {}
+    _w = ra_mod.ReadAloudWorker(_cfgc(), gemini_api_key="x", base_dir=_ra_dir, play_func=lambda w: None,
+                                pipeline_func=_pipe_mc, engine_check=lambda: True, **_kw)
+    _w.start()
+    _ev2 = _th.Event()
+    _w.enqueue_taro("太郎の長い発言" * 20)
+    _w.enqueue_comment("viewer1", "視聴者の長いコメント" * 20)
+    _w.enqueue_done_marker(_ev2)
+    _ev2.wait(5)
+    _w.stop()
+    _label = "声オフ" if _synth is None else "Gemini失敗時"
+    check(f"太郎の発言は切らない（{_label}）", ("higeremu_ai", 0) in _mc)
+    check(f"視聴者コメントは設定どおり切る（{_label}）", ("viewer1", 30) in _mc)
+
 # v4.58 読み方の指示は口調の後ろに付く
 class _PronCfg(_TaroCfg):
     TARO_VOICE_PRONUNCIATION = "「ヒゲさん」は平板で読む"
@@ -1521,6 +1546,25 @@ lanes_vc.set_vc_toggle(lambda on: _toggles.append(on) or True)
 lanes_vc.on_speech(f"{cfg_vc.AI_NAME}、VC聞いて")
 check("VC命令: 声で「太郎、VC聞いて」→切り替えが呼ばれる", _toggles == [True])
 check("VC命令: 切り替えたらチャットで了解と返す", tw_vc.sent[-1][0].startswith("了解、VCも聞いとくね"))
+
+# v4.59 記録をファイルにも残す
+_lg_dir = '/tmp/taro_test_logs'
+shutil.rmtree(_lg_dir, ignore_errors=True)
+os.makedirs(os.path.join(_lg_dir, "logs"), exist_ok=True)
+_old_log = os.path.join(_lg_dir, "logs", "taro_2000-01-01.log")
+open(_old_log, "w").close()
+os.utime(_old_log, (time.time() - 40 * 86400, time.time() - 40 * 86400))
+_fh = _gui.make_file_log_handler(_lg_dir)
+_tl = _logging.getLogger("test_file_log")
+_tl.addHandler(_fh); _tl.setLevel(_logging.INFO)
+_tl.info("読み上げのテスト記録です")
+_fh.flush(); _tl.removeHandler(_fh); _fh.close()
+_today_logs = [f for f in os.listdir(os.path.join(_lg_dir, "logs")) if f != "taro_2000-01-01.log"]
+check("記録ファイル: 今日の日付のファイルに書かれる",
+      len(_today_logs) == 1 and "読み上げのテスト記録です" in open(
+          os.path.join(_lg_dir, "logs", _today_logs[0]), encoding="utf-8").read())
+check("記録ファイル: 30日より古いものは消える", not os.path.exists(_old_log))
+check("記録ファイル: 画面の記録の整え直しでも残る目印が付いている", getattr(_fh, "_taro_file_log", False))
 
 # 起動ボタンの種類 → 設定値
 _m = _types.SimpleNamespace(TARO_AI_ENABLED=True, READ_ALOUD_ENABLED=False)

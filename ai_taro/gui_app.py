@@ -19,6 +19,32 @@ import os
 import time
 
 # ログをGUIに転送するハンドラー
+LOG_KEEP_DAYS = 30  # v4.59: 記録ファイルを何日分残すか
+
+
+def make_file_log_handler(base_dir: str = ""):
+    """v4.59: 画面に出る記録を logs/taro_YYYY-MM-DD.log にも書き出す（配信後に原因を調べるため）。
+    視聴者の名前やコメントを含むので gitignore（*.log）対象。古いものは LOG_KEEP_DAYS 日分だけ残す"""
+    import datetime
+    import glob
+    base_dir = base_dir or os.path.dirname(os.path.abspath(__file__))
+    log_dir = os.path.join(base_dir, "logs")
+    os.makedirs(log_dir, exist_ok=True)
+    cutoff = time.time() - LOG_KEEP_DAYS * 86400
+    for f in glob.glob(os.path.join(log_dir, "taro_*.log")):
+        try:
+            if os.path.getmtime(f) < cutoff:
+                os.remove(f)
+        except OSError:
+            pass
+    path = os.path.join(log_dir, f"taro_{datetime.date.today().isoformat()}.log")
+    handler = logging.FileHandler(path, encoding="utf-8")
+    handler.setFormatter(logging.Formatter(
+        "%(asctime)s [%(levelname)s] %(name)s: %(message)s", datefmt="%Y-%m-%d %H:%M:%S"))
+    handler._taro_file_log = True
+    return handler
+
+
 class QueueHandler(logging.Handler):
     def __init__(self, log_queue):
         super().__init__()
@@ -819,6 +845,11 @@ class BotGUI:
             datefmt="%H:%M:%S"
         ))
         root_logger.addHandler(queue_handler)
+        # v4.59: 記録をファイルにも残す（失敗しても太郎は動かす）
+        try:
+            root_logger.addHandler(make_file_log_handler())
+        except Exception as e:
+            self._append_log(f"記録ファイルを作れませんでした（画面の記録は出ます）: {e}", "WARNING")
         root_logger.setLevel(logging.INFO)
 
         self.bot_thread = threading.Thread(target=self._run_bot, daemon=True)
@@ -844,8 +875,11 @@ class BotGUI:
             # （モジュールインポート時に追加ハンドラーが生じる場合の対策）
             _root_logger = logging.getLogger()
             _queue_handlers = [h for h in _root_logger.handlers if isinstance(h, QueueHandler)]
+            _file_handlers = [h for h in _root_logger.handlers if getattr(h, "_taro_file_log", False)]
             for h in _root_logger.handlers[:]:
                 _root_logger.removeHandler(h)
+            for h in _file_handlers[-1:]:  # v4.59: 記録ファイルは残す
+                _root_logger.addHandler(h)
             if _queue_handlers:
                 _root_logger.addHandler(_queue_handlers[-1])
             else:
