@@ -1208,6 +1208,35 @@ check("Geminiが失敗したら太郎の発言はVOICEVOXで読む（黙らな�
 wf.stop()
 
 
+# v4.59 上位版が上限で断ったら軽量版で作り直す
+_fb_models = []
+
+
+def _flash_fails(text, **kw):
+    _fb_models.append(kw["model"])
+    return None if kw["model"] == "gemini-3.8-flash-tts" else b"LITE-VOICE"
+
+
+_played_fb = []
+wfb = ra_mod.ReadAloudWorker(_TaroCfg(), gemini_api_key="x", base_dir=_ra_dir,
+                             play_func=_played_fb.append, pipeline_func=_pipe_rec,
+                             engine_check=lambda: True, taro_synth=_flash_fails)
+wfb.normalize_enabled = False
+wfb.start()
+wfb.enqueue_taro("上限テスト")
+_wait_played(_played_fb, 1)
+check("上位版が断ったら軽量版で同じ声を作り直す",
+      _played_fb[:1] == [b"LITE-VOICE"] and _fb_models == ["gemini-3.8-flash-tts", "gemini-3.8-flash-lite-tts"])
+wfb.stop()
+
+check("上限エラーは『1分あたり』と分かる形で記録する",
+      "1分あたり10回" in gtts._describe_error(_FakeResp(429, json_data={"error": {"details": [
+          {"violations": [{"quotaId": "GenerateRequestsPerMinutePerProjectPerModel", "quotaValue": "10"}]}]}})))
+check("上限エラーは『1日あたり』も見分ける",
+      "1日あたり" in gtts._describe_error(_FakeResp(429, json_data={"error": {"details": [
+          {"violations": [{"quotaId": "GenerateRequestsPerDayPerProjectPerModel", "quotaValue": "100"}]}]}})))
+
+
 class _TaroOffCfg(_TaroCfg):
     TARO_VOICE_ENABLED = False
 

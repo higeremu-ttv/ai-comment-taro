@@ -104,6 +104,7 @@ class ReadAloudWorker:
         self.taro_voice_enabled = getattr(config, "TARO_VOICE_ENABLED", False)
         self.taro_voice_name = getattr(config, "TARO_VOICE_NAME", "Algieba")
         self.taro_voice_model = getattr(config, "TARO_VOICE_MODEL", "gemini-3.8-flash-tts")
+        self.taro_voice_fallback_model = getattr(config, "TARO_VOICE_FALLBACK_MODEL", "gemini-3.8-flash-lite-tts")
         self.taro_voice_style = getattr(config, "TARO_VOICE_STYLE", "")
         self.taro_voice_language = getattr(config, "TARO_VOICE_LANGUAGE", "ja-JP")
         self.taro_voice_replace = getattr(config, "TARO_VOICE_REPLACE", "")
@@ -226,6 +227,14 @@ class ReadAloudWorker:
                     except Exception as e:
                         logger.warning(f"太郎の声（Gemini）の作成に失敗: {e}")
                         wav = None
+                    if not wav and self.taro_voice_fallback_model \
+                            and self.taro_voice_fallback_model != self.taro_voice_model:
+                        # v4.59: 上位版が上限（1分10回）等で断ったら、上限が別枠の軽量版で同じ声を作り直す
+                        logger.info("太郎の声: 軽量版モデルで作り直します")
+                        wav = self._taro_synth(
+                            text, api_key=self.gemini_api_key, style=self.taro_voice_style,
+                            model=self.taro_voice_fallback_model, voice_name=self.taro_voice_name,
+                            language_code=self.taro_voice_language, replacements=self.taro_voice_replace)
                     if not wav:
                         logger.warning("太郎の声が作れなかったため、VOICEVOXで読みます")
                         wav = self._pipeline(

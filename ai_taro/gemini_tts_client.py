@@ -72,8 +72,7 @@ def synthesize(text: str, api_key: str, model: str = DEFAULT_MODEL,
         resp = http.post(f"{API_BASE}/{model}:generateContent",
                          params={"key": api_key}, json=body, timeout=timeout)
         if resp.status_code != 200:
-            # キーが混ざらないよう本文の先頭だけ残す（429=1分あたりの上限、等の切り分け用）
-            logger.warning(f"Gemini TTS エラー: HTTP {resp.status_code} {(resp.text or '')[:120]}")
+            logger.warning(f"Gemini TTS エラー（{model}）: {_describe_error(resp)}")
             return None
         data = resp.json()
         candidates = data.get("candidates") or []
@@ -89,6 +88,22 @@ def synthesize(text: str, api_key: str, model: str = DEFAULT_MODEL,
     except Exception as e:
         logger.warning(f"Gemini TTSに接続できません: {type(e).__name__}")
         return None
+
+
+def _describe_error(resp) -> str:
+    """エラーを短く日本語で。429 はどの上限（1分あたり／1日あたり）に当たったかを出す"""
+    try:
+        err = resp.json().get("error", {})
+        if resp.status_code == 429:
+            for d in err.get("details", []):
+                for v in d.get("violations", []):
+                    qid = v.get("quotaId", "")
+                    kind = "1分あたり" if "PerMinute" in qid else ("1日あたり" if "PerDay" in qid else qid)
+                    return f"利用上限（{kind}{v.get('quotaValue', '')}回）に達しました"
+            return "利用上限に達しました"
+        return f"HTTP {resp.status_code} {(err.get('message') or '')[:80]}"
+    except Exception:
+        return f"HTTP {resp.status_code}"
 
 
 def apply_replacements(text: str, replacements: str) -> str:
