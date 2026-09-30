@@ -327,6 +327,8 @@ VC_END_SILENCE_SECONDS = 0.8       # この秒数静かになったら1発言の
 VC_MIN_CHARS = 4                   # これより短い聞き取り結果は無視
 VC_REPLY_COOLDOWN = 20             # VCで呼ばれて返事したあと、次に返事するまでの最短秒数
 VC_ANNOUNCE = True                 # 声で切り替えたとき、チャットで「了解」と返すか
+VC_CONVERSATION_WINDOW = 20        # VCで呼ばれて返事した後、この秒数は名前なしでも返事する（会話モード）
+VC_CONVERSATION_MAX_TURNS = 3      # 会話モードで続ける最大往復数（呼ばれた1回目を含む）
 
 # 読み上げの声の大きさをそろえる（VOICEVOXとGeminiで大きさが違い、Geminiはセリフごとにもばらつくため）
 # 全部の声を同じ平均の大きさ（dBFS。0が最大、数字が小さいほど静か）にしてから鳴らす。

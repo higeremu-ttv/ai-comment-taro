@@ -1544,8 +1544,21 @@ check("VC: 太郎と呼ばれたら返事する", tw_vc.sent == [("え、俺の�
 check("VC: 返事には直前のVCの会話が添えられる", "撃ち合い勝った" in _vc_prompts[0])
 check("VC: 仲間の発言は手帳（会話履歴）に入れない",
       not any("撃ち合い" in str(m) for m in gen_vc._conversation_history))
+lanes_vc.on_vc_speech("じゃあ次どこ行く？")
+check("VC会話モード: 返事の直後は名前なしでも返事する", len(tw_vc.sent) == 2)
+check("VC会話モード: 続きだと分かる形でGeminiに渡す", "会話の続き" in _vc_prompts[-1])
+lanes_vc.on_vc_speech("そっちの建物にしよう")
+check("VC会話モード: 3往復目まで返事する", len(tw_vc.sent) == 3)
+lanes_vc.on_vc_speech("オッケー、行こう")
+check("VC会話モード: 3往復で一区切り（4回目は返さない）", len(tw_vc.sent) == 3)
 lanes_vc.on_vc_speech("太郎、聞こえてる？")
-check("VC: 返事した直後にまた呼ばれても連続では返さない", len(tw_vc.sent) == 1)
+check("VC: 一区切りの直後に呼ばれても、20秒以内なら連続では返さない", len(tw_vc.sent) == 3)
+lanes_vc._last_vc_reply -= 30
+lanes_vc.on_vc_speech("タロウ、聞こえてる？")
+check("VC: 「タロウ」と書かれても呼ばれたと分かる（20秒たった後）", len(tw_vc.sent) == 4)
+lanes_vc._vc_conv_until = 0.0
+lanes_vc.on_vc_speech("関係ない仲間どうしの話")
+check("VC: 会話モードが切れたら、呼ばれない発言には返事しない", len(tw_vc.sent) == 4)
 
 _toggles = []
 lanes_vc.set_vc_toggle(lambda on: _toggles.append(on) or True)

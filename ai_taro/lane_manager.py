@@ -85,6 +85,8 @@ class LaneManager:
         self._vc_memo = deque(maxlen=8)  # 直近のVCの発言（返事の文脈用・一時的）
         self._vc_toggle = None           # 切り替え関数 on(bool)->成功したか（gui_appから設定）
         self._last_vc_reply = 0.0
+        self._vc_conv_until = 0.0        # v4.59: VCの会話モード（呼ばれて返事した後しばらくは名前なしでも返事）
+        self._vc_conv_turns = 0
 
     # ============================================================
     # VCモード（v4.59）
@@ -119,26 +121,45 @@ class LaneManager:
             msg = "了解、VCはもう聞かないね"
         self._send_priority(msg)
 
+    VC_NAME_VARIANTS = ("太郎", "たろう", "タロウ", "太朗")  # Whisperの書き方の揺れ
+
     def on_vc_speech(self, text: str):
-        """VCで聞き取れた発言。呼ばれたときだけ返事し、それ以外は一時メモに置くだけ（割り込まない）"""
+        """VCで聞き取れた発言。呼ばれたとき（と、その直後の会話モード中）だけ返事し、
+        それ以外は一時メモに置くだけ（割り込まない）"""
         logger.info(f"[VC] {text}")
         recent = "／".join(self._vc_memo)
         self._vc_memo.append(text)
         ai_name = getattr(self.config, 'AI_NAME', '太郎')
-        if not (ai_name in text or '太郎' in text):
-            return
         now = time.time()
-        if now - self._last_vc_reply < getattr(self.config, 'VC_REPLY_COOLDOWN', 20):
-            logger.info("[VC] 呼ばれたが、直前に返事したばかりなので見送り")
+        called = ai_name in text or any(v in text for v in self.VC_NAME_VARIANTS)
+        max_turns = getattr(self.config, 'VC_CONVERSATION_MAX_TURNS', 3)
+        in_conv = (not called and now < self._vc_conv_until and self._vc_conv_turns < max_turns)
+        if not (called or in_conv):
             return
+        if called:
+            if now - self._last_vc_reply < getattr(self.config, 'VC_REPLY_COOLDOWN', 20) \
+                    and now >= self._vc_conv_until:
+                logger.info("[VC] 呼ばれたが、直前に返事したばかりなので見送り")
+                return
+            self._vc_conv_turns = 0  # 新しい会話の始まり
+        else:
+            logger.info(f"[VC会話モード] 続きの発言として返事: {text[:30]}")
         context = f"直前のVCの会話：{recent}。" if recent else ""
+        how = (f"あなた（{ai_name}）に「{text}」と話しかけました。" if called else
+               f"「{text}」と言いました（さっきあなたが返事をした会話の続きです）。")
         prompt = (f"配信者がゲームのボイスチャットで一緒に遊んでいる仲間（誰かは分からない）が、"
-                  f"あなた（{ai_name}）に「{text}」と話しかけました。{context}"
+                  f"{how}{context}"
                   f"配信を見ている視聴者の{ai_name}として、チャットで自然に1文で返事してください。"
                   f"仲間の名前は分からないので呼ばないこと。日本語のみ。")
         comment = self.comment_gen._call_gemini(prompt, smart=getattr(self.config, 'MENTION_USE_SMART', True))
         if comment:
             self._last_vc_reply = now
+            self._vc_conv_turns += 1
+            if self._vc_conv_turns >= max_turns:
+                self._vc_conv_until = 0.0
+                logger.info(f"[VC会話モード] {max_turns}往復で一区切り")
+            else:
+                self._vc_conv_until = time.time() + getattr(self.config, 'VC_CONVERSATION_WINDOW', 20)
             logger.info(f"[VC呼びかけ反応] {text} → {comment}")
             self._send_priority(comment)
 
