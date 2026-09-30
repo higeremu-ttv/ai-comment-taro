@@ -561,7 +561,7 @@ class BotGUI:
         make_field(sec4, "太郎の声の読み替え", self.var_taro_voice_replace)
         make_note(sec4, "声にするときだけ置き換える語（チャットの文は変わらない）。「元=読み」をカンマ区切り。例: ひげさん=ヒゲさん")
         make_field(sec4, "太郎の声 1分あたりの回数", self.var_taro_voice_rpm)
-        make_note(sec4, "Gemini上位版の上限は1分10回。これを超えそうなときは軽量版の声で作ります（0で数えない）")
+        make_note(sec4, "これを超えそうなときは予備のモデルの声で作ります（0で数えない。上位版を使うときは上限1分10回なので8）")
         make_field(sec4, "太郎の声の読み方", self.var_taro_voice_pron)
         make_note(sec4, "抑揚の指示（声には出ません）。例: 「ヒゲさん」は「ヒ」を低く、「ゲさん」を高く平らに読む")
 
@@ -669,7 +669,7 @@ class BotGUI:
             self.var_taro_voice_replace.set(getattr(cfg, "TARO_VOICE_REPLACE", ""))
             self.var_taro_voice_pron.set(getattr(cfg, "TARO_VOICE_PRONUNCIATION", ""))
             self.var_read_max_chars.set(str(getattr(cfg, "READ_ALOUD_MAX_CHARS_JA", 150)))
-            self.var_taro_voice_rpm.set(str(getattr(cfg, "TARO_VOICE_MAX_PER_MINUTE", 8)))
+            self.var_taro_voice_rpm.set(str(getattr(cfg, "TARO_VOICE_MAX_PER_MINUTE", 0)))
             self.var_gimmick_enabled.set(getattr(cfg, "GIMMICK_ENABLED", True))
             self.var_gimmick_words.set(getattr(cfg, "GIMMICK_WORDS", "行進,ランダム,おなかすいた"))
             self.var_speech_gimmicks.set(getattr(cfg, "SPEECH_GIMMICKS", "ビクロイ=gg"))

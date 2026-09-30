@@ -1172,6 +1172,7 @@ class _TaroCfg(_RAConfig):
     TARO_VOICE_ENABLED = True
     TARO_VOICE_NAME = "Algieba"
     TARO_VOICE_MODEL = "gemini-3.8-flash-tts"
+    TARO_VOICE_FALLBACK_MODEL = "gemini-3.8-flash-lite-tts"
     TARO_VOICE_STYLE = "生意気に"
     BOT_NICK = "higeremu_ai"
     READ_ALOUD_MAX_QUEUE = 50
@@ -1248,6 +1249,35 @@ _wait_played(_played_fb, 1)
 check("上位版が断ったら軽量版で同じ声を作り直す",
       _played_fb[:1] == [b"LITE-VOICE"] and _fb_models == ["gemini-3.8-flash-tts", "gemini-3.8-flash-lite-tts"])
 wfb.stop()
+
+
+# 2026-10-01 既定は軽量版。軽量版が断ったら上位版で作り直す
+_fb2_models = []
+
+
+def _lite_fails(text, **kw):
+    _fb2_models.append(kw["model"])
+    return None if kw["model"] == "gemini-3.8-flash-lite-tts" else b"FLASH-VOICE"
+
+
+class _LiteDefaultCfg(_RAConfig):
+    TARO_VOICE_ENABLED = True
+    BOT_NICK = "higeremu_ai"
+    READ_ALOUD_MAX_QUEUE = 50
+
+
+_played_fb2 = []
+wfb2 = ra_mod.ReadAloudWorker(_LiteDefaultCfg(), gemini_api_key="x", base_dir=_ra_dir,
+                              play_func=_played_fb2.append, pipeline_func=_pipe_rec,
+                              engine_check=lambda: True, taro_synth=_lite_fails)
+wfb2.normalize_enabled = False
+wfb2.start()
+wfb2.enqueue_taro("軽量版テスト")
+_wait_played(_played_fb2, 1)
+check("既定は軽量版で、断られたら上位版で作り直す",
+      _played_fb2[:1] == [b"FLASH-VOICE"]
+      and _fb2_models == ["gemini-3.8-flash-lite-tts", "gemini-3.8-flash-tts"])
+wfb2.stop()
 
 check("上限エラーは『1分あたり』と分かる形で記録する",
       "1分あたり10回" in gtts._describe_error(_FakeResp(429, json_data={"error": {"details": [

@@ -103,11 +103,11 @@ class ReadAloudWorker:
         self._taro_synth = taro_synth
         self.taro_voice_enabled = getattr(config, "TARO_VOICE_ENABLED", False)
         self.taro_voice_name = getattr(config, "TARO_VOICE_NAME", "Algieba")
-        self.taro_voice_model = getattr(config, "TARO_VOICE_MODEL", "gemini-3.8-flash-tts")
-        self.taro_voice_fallback_model = getattr(config, "TARO_VOICE_FALLBACK_MODEL", "gemini-3.8-flash-lite-tts")
-        # v4.59: 太郎の声（上位版）を1分に何回まで使うか。超えそうなら断られる前に軽量版へ
+        self.taro_voice_model = getattr(config, "TARO_VOICE_MODEL", "gemini-3.8-flash-lite-tts")
+        self.taro_voice_fallback_model = getattr(config, "TARO_VOICE_FALLBACK_MODEL", "gemini-3.8-flash-tts")
+        # v4.59: 太郎の声（最初に使うモデル）を1分に何回まで使うか。超えそうなら断られる前に予備のモデルへ
         gemini_tts_client.set_rate_limit(self.taro_voice_model,
-                                         getattr(config, "TARO_VOICE_MAX_PER_MINUTE", 8))
+                                         getattr(config, "TARO_VOICE_MAX_PER_MINUTE", 0))
         self.taro_voice_style = getattr(config, "TARO_VOICE_STYLE", "")
         self.taro_voice_language = getattr(config, "TARO_VOICE_LANGUAGE", "ja-JP")
         self.taro_voice_replace = getattr(config, "TARO_VOICE_REPLACE", "")
@@ -233,8 +233,8 @@ class ReadAloudWorker:
                         wav = None
                     if not wav and self.taro_voice_fallback_model \
                             and self.taro_voice_fallback_model != self.taro_voice_model:
-                        # v4.59: 上位版が上限（1分10回）等で断ったら、上限が別枠の軽量版で同じ声を作り直す
-                        logger.info("太郎の声: 軽量版モデルで作り直します")
+                        # v4.59: 最初のモデルが上限等で断ったら、上限が別枠の予備のモデルで同じ声を作り直す
+                        logger.info(f"太郎の声: 予備のモデル（{self.taro_voice_fallback_model}）で作り直します")
                         wav = self._taro_synth(
                             text, api_key=self.gemini_api_key, style=self.taro_voice_style,
                             model=self.taro_voice_fallback_model, voice_name=self.taro_voice_name,

@@ -290,18 +290,20 @@ VOICEVOX_ENGINE_PATH = os.path.join(os.environ.get("LOCALAPPDATA", ""), "Program
 READ_ALOUD_ENGLISH_VOICE = "Puck"
 
 # 太郎の発言をGeminiの声で読む（オフなら視聴者コメントと同じVOICEVOXで読む）
-# 費用の目安: 上位版で発言1回約0.2円、1配信200回で約40円（2026-09-29の料金。2027年1月から倍）
+# 費用の目安: 軽量版で発言1回約0.13円、1配信200回で約26円（2026-10-01の料金。2027年1月から倍）
 TARO_VOICE_ENABLED = False
 
 # 太郎の声（2026-09-29 14候補を聞き比べて決定。口調は2026-09-30に3案から選び直し
 # ＝「憎たらしい」系は皮肉っぽすぎたため。管理画面の「太郎の声の口調」で変更可）
 TARO_VOICE_NAME = "Algieba"
-TARO_VOICE_MODEL = "gemini-3.8-flash-tts"
-# 上位版が上限（1分10回）等で失敗したときに作り直すモデル（上限は別枠）。それも失敗したらVOICEVOX
-TARO_VOICE_FALLBACK_MODEL = "gemini-3.8-flash-lite-tts"
-# 太郎の声（上位版）を1分に何回まで使うか。上位版の上限は1分10回なので余裕を見て8。
-# 超えそうなときは断られる前に軽量版で作る（管理画面で変更可。0で数えない）
-TARO_VOICE_MAX_PER_MINUTE = 8
+# 2026-10-01 軽量版に切り替え（上位版は1日100回の上限があり、切り替わっても聞いて差が分からなかったため。
+# 料金は上位版の3分の2）。上位版に戻すなら "gemini-3.8-flash-tts" にし、下の2行も入れ替える
+TARO_VOICE_MODEL = "gemini-3.8-flash-lite-tts"
+# 軽量版が失敗したときに作り直すモデル（上限は別枠）。それも失敗したらVOICEVOX
+TARO_VOICE_FALLBACK_MODEL = "gemini-3.8-flash-tts"
+# 太郎の声（最初に使うモデル）を1分に何回まで使うか。超えそうなときは断られる前に予備のモデルで作る
+# （管理画面で変更可。0で数えない。上位版を使うときは、上限1分10回なので8）
+TARO_VOICE_MAX_PER_MINUTE = 0
 TARO_VOICE_STYLE = "親しい友達にツッコむような、ちょっと生意気で空気読めてない口調で"
 
 # 太郎の声の言語（日本語固定の方が自然と判定。2026-09-30）
