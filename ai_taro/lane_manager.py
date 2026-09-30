@@ -84,6 +84,7 @@ class LaneManager:
         from collections import deque
         self._vc_memo = deque(maxlen=8)  # 直近のVCの発言（返事の文脈用・一時的）
         self._vc_toggle = None           # 切り替え関数 on(bool)->成功したか（gui_appから設定）
+        self._vc_talk_toggle = None      # v4.59: 太郎の声をVCに流すかの切り替え関数（gui_appから設定）
         self._last_vc_reply = 0.0
         self._vc_conv_until = 0.0        # v4.59: VCの会話モード（呼ばれて返事した後しばらくは名前なしでも返事）
         self._vc_conv_turns = 0
@@ -108,6 +109,34 @@ class LaneManager:
         if any(w in text for w in self.VC_ON_WORDS):
             return True
         return None
+
+    # v4.59: 太郎の声をVCに流す／流さない（「太郎、VCでしゃべって」「太郎、VCでは黙って」）
+    VC_TALK_WORDS = ("喋", "しゃべ", "話して", "声出", "声を出", "声入れ", "声を入れ", "声流", "声を流",
+                     "流して", "聞かせ", "黙")
+    VC_TALK_OFF_WORDS = ("喋らな", "しゃべらな", "話さな", "出さな", "入れな", "流さな", "聞かせな", "黙",
+                         "やめ", "止め", "オフ", "いいよ", "もういい")
+
+    def set_vc_talk_toggle(self, fn: Callable):
+        self._vc_talk_toggle = fn
+
+    def _detect_vc_talk_command(self, text: str):
+        """「太郎、VCでしゃべって」→True / 「太郎、VCでは黙って」→False / それ以外→None"""
+        low = text.lower()
+        if not any(w in low for w in self.VC_WORDS):
+            return None
+        if not any(w in text for w in self.VC_TALK_WORDS):
+            return None
+        return not any(w in text for w in self.VC_TALK_OFF_WORDS)
+
+    def _handle_vc_talk_command(self, on: bool):
+        ok = self._vc_talk_toggle(on)
+        if not getattr(self.config, 'VC_ANNOUNCE', True):
+            return
+        if on:
+            msg = "了解、VCでもしゃべるね！" if ok else "VCに流す出力先が設定されてないみたい…管理画面を見てみて"
+        else:
+            msg = "了解、VCでは黙っとくね"
+        self._send_priority(msg)
 
     def _handle_vc_command(self, on: bool):
         if self._vc_toggle is None:
@@ -352,6 +381,13 @@ class LaneManager:
                 logger.info(f"[{ai_name}呼びかけ] {q}")
             else:
                 logger.info(f"[会話モード] 続きの発言として応答: {text[:30]}")
+
+            # v4.59: 太郎の声をVCに流す切り替え（「VC聞いて」より先に見る。「しゃべるのやめて」を聞く側と取り違えないため）
+            talk_cmd = self._detect_vc_talk_command(q)
+            if talk_cmd is not None and self._vc_talk_toggle is not None:
+                logger.info(f"[VC] 声の命令: 太郎の声を{'流す' if talk_cmd else '流さない'}")
+                self._handle_vc_talk_command(talk_cmd)
+                return
 
             # v4.59: VCモードの切り替え（「太郎、VC聞いて」「太郎、VCはいいよ」）
             vc_cmd = self._detect_vc_command(q)

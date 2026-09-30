@@ -42,6 +42,48 @@ def _play_wav(wav: bytes):
     winsound.PlaySound(wav, winsound.SND_MEMORY)
 
 
+def scale_wav(wav: bytes, percent: float) -> bytes:
+    """声の大きさを percent% にする（VCに流す分だけ小さくするため）。読めないデータはそのまま"""
+    try:
+        import io
+        import wave
+        import numpy as np
+        with wave.open(io.BytesIO(wav)) as w:
+            params = w.getparams()
+            if params.sampwidth != 2:
+                return wav
+            frames = w.readframes(params.nframes)
+        x = np.frombuffer(frames, dtype=np.int16).astype(np.float64)
+        y = np.clip(x * max(0.0, percent) / 100.0, -32768, 32767).astype(np.int16)
+        out = io.BytesIO()
+        with wave.open(out, "wb") as w:
+            w.setparams(params)
+            w.writeframes(y.tobytes())
+        return out.getvalue()
+    except Exception as e:
+        logger.debug(f"音量の調整をスキップ: {e}")
+        return wav
+
+
+def play_wav_to_device(wav: bytes, device_name: str):
+    """v4.59: 名前に device_name を含むWindowsの出力先で鳴らす（太郎の声をVCに流す用）"""
+    import io
+    import wave
+    import numpy as np
+    from vc_listener import _patch_numpy_fromstring
+    _patch_numpy_fromstring()
+    import soundcard as sc
+    spk = next((s for s in sc.all_speakers() if device_name.lower() in s.name.lower()), None)
+    if spk is None:
+        raise RuntimeError(f"出力先「{device_name}」が見つかりません")
+    with wave.open(io.BytesIO(wav)) as w:
+        ch, rate = w.getnchannels(), w.getframerate()
+        if w.getsampwidth() != 2:
+            raise RuntimeError("16bitのWAVではありません")
+        data = np.frombuffer(w.readframes(w.getnframes()), dtype=np.int16).astype(np.float32) / 32768.0
+    spk.play(data.reshape(-1, ch), samplerate=rate)
+
+
 def normalize_wav(wav: bytes, target_dbfs: float = -21.0, peak_dbfs: float = -3.0) -> bytes:
     """v4.58: 声の大きさをそろえる。
     VOICEVOXは平均 約-21.5dBFSで安定しているが、Geminiは -13〜-19dBFS とセリフごとにばらつき、
@@ -83,7 +125,8 @@ class ReadAloudWorker:
     def __init__(self, config, gemini_api_key: str = "", base_dir: str = "",
                  play_func=_play_wav, pipeline_func=reading_pipeline.read_comment,
                  engine_check=voicevox_client.is_engine_running,
-                 taro_synth=gemini_tts_client.speak_as_taro):
+                 taro_synth=gemini_tts_client.speak_as_taro,
+                 vc_play_func=play_wav_to_device):
         self.config = config
         self.gemini_api_key = gemini_api_key
         self.base_dir = base_dir or os.path.dirname(os.path.abspath(__file__))
@@ -118,6 +161,38 @@ class ReadAloudWorker:
         self.bot_nick = getattr(config, "BOT_NICK", "")
         # 太郎の声づくり専用の手（再生の列とは別に、先に作り始めておくため）
         self._taro_pool = ThreadPoolExecutor(max_workers=2)
+        # v4.59: 太郎の発言をVCにも流す（スイッチがオンのときだけ。視聴者コメントは流さない）
+        self._vc_play = vc_play_func
+        self.taro_vc_device = getattr(config, "TARO_VC_OUTPUT_DEVICE", "")
+        self.taro_vc_volume = getattr(config, "TARO_VC_VOLUME", 50)
+        self.taro_vc_on = False  # 起動時は必ずオフ（ボタンか声で切り替える）
+        self._vc_warned = False
+
+    def set_taro_vc(self, on: bool) -> bool:
+        """太郎の声をVCに流す／流さない。出力先が設定されていなければオンにできない（Falseを返す）"""
+        if on and not self.taro_vc_device:
+            self.taro_vc_on = False
+            return False
+        self.taro_vc_on = bool(on)
+        self._vc_warned = False
+        logger.info(f"太郎の声をVCに: {'流す' if self.taro_vc_on else '流さない'}")
+        return True
+
+    def _play_taro_to_vc(self, wav: bytes):
+        """太郎の声を、配信用と同時にVC用の出力先でも鳴らす（別の手で。終わるのは待たない）"""
+        if not self.taro_vc_device or not self.taro_vc_on:
+            return
+        quiet = scale_wav(wav, self.taro_vc_volume)
+
+        def _run():
+            try:
+                self._vc_play(quiet, self.taro_vc_device)
+            except Exception as e:
+                if not self._vc_warned:  # 毎回出すと記録が埋まるので最初の1回だけ
+                    logger.warning(f"太郎の声をVCに流せませんでした: {e}")
+                    self._vc_warned = True
+
+        threading.Thread(target=_run, daemon=True).start()
 
     def _gemini_english(self, text, api_key):
         return gemini_tts_client.synthesize(text, api_key=api_key, voice_name=self.english_voice)
@@ -222,9 +297,10 @@ class ReadAloudWorker:
                 if item[0] == "done":
                     item[1].set()
                     continue
+                is_taro = item[0] == "taro"
                 if item[0] == "wav":
                     wav = item[1]
-                elif item[0] == "taro":
+                elif is_taro:
                     _, future, text = item
                     try:
                         wav = future.result(timeout=30)
@@ -248,6 +324,8 @@ class ReadAloudWorker:
                             emote_names=None, max_chars_ja=0)  # 太郎自身の発言は切らない
                 else:
                     _, username, text, emote_names, max_chars = item
+                    # 太郎の声がVOICEVOXのときは、太郎の発言もここを通る
+                    is_taro = bool(self.bot_nick) and username == self.bot_nick
                     wav = self._pipeline(
                         username, text, gemini_api_key=self.gemini_api_key,
                         dictionary_data=self.dictionary, exclusions_data=self.exclusions,
@@ -257,6 +335,8 @@ class ReadAloudWorker:
                 if wav:
                     if self.normalize_enabled:
                         wav = normalize_wav(wav, self.target_dbfs)
+                    if is_taro:
+                        self._play_taro_to_vc(wav)
                     self._play(wav)
             except Exception as e:
                 logger.warning(f"読み上げに失敗: {e}")

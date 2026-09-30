@@ -261,6 +261,23 @@ class BotGUI:
             bg=self.colors["bg"], fg=self.colors["text_dim"], font=("Yu Gothic UI", 9))
         self.vc_label.pack(side="left")
 
+        # v4.59: 太郎の声をVCに流すスイッチ（3段目）。起動時は必ずオフ
+        vc_talk_frame = tk.Frame(parent, bg=self.colors["bg"])
+        vc_talk_frame.pack(fill="x", padx=8, pady=(0, 6))
+        self.vc_talk_btn = tk.Button(
+            vc_talk_frame, text="🗣 太郎の声をVCに流す",
+            bg=self.colors["border"], fg=self.colors["text_dim"],
+            font=("Yu Gothic UI", 10),
+            relief="flat", bd=0, padx=12, pady=6,
+            cursor="hand2", state="disabled",
+            command=self.toggle_taro_vc
+        )
+        self.vc_talk_btn.pack(side="left", padx=(0, 8))
+        self.vc_talk_label = tk.Label(
+            vc_talk_frame, text=self.VC_TALK_OFF_TEXT,
+            bg=self.colors["bg"], fg=self.colors["text_dim"], font=("Yu Gothic UI", 9))
+        self.vc_talk_label.pack(side="left")
+
         # 会話ステート表示
         state_frame = tk.Frame(parent, bg=self.colors["panel"], pady=4)
         state_frame.pack(fill="x", padx=8, pady=(0, 4))
@@ -392,6 +409,8 @@ class BotGUI:
         self.var_taro_voice_pron = tk.StringVar()      # v4.58
         self.var_read_max_chars = tk.StringVar()       # v4.59
         self.var_taro_voice_rpm = tk.StringVar()       # v4.59
+        self.var_taro_vc_device = tk.StringVar()       # v4.59
+        self.var_taro_vc_volume = tk.StringVar()       # v4.59
         self.var_gimmick_enabled = tk.BooleanVar()
         self.var_gimmick_words = tk.StringVar()
         self.var_speech_gimmicks = tk.StringVar()
@@ -562,6 +581,10 @@ class BotGUI:
         make_note(sec4, "声にするときだけ置き換える語（チャットの文は変わらない）。「元=読み」をカンマ区切り。例: ひげさん=ヒゲさん")
         make_field(sec4, "太郎の声 1分あたりの回数", self.var_taro_voice_rpm)
         make_note(sec4, "これを超えそうなときは予備のモデルの声で作ります（0で数えない。上位版を使うときは上限1分10回なので8）")
+        make_field(sec4, "太郎の声をVCに流す出力先", self.var_taro_vc_device)
+        make_note(sec4, "VCモード中だけ、太郎の発言をこの出力先にも鳴らします（空欄なら流さない）。Wave LinkでVC用のミックスに入れておく")
+        make_field(sec4, "VCに流す太郎の声の大きさ (%)", self.var_taro_vc_volume)
+        make_note(sec4, "配信の太郎の声を100として。VCで大きすぎたら下げる（おじさんのマイクの音量は変わりません）")
         make_field(sec4, "太郎の声の読み方", self.var_taro_voice_pron)
         make_note(sec4, "抑揚の指示（声には出ません）。例: 「ヒゲさん」は「ヒ」を低く、「ゲさん」を高く平らに読む")
 
@@ -670,6 +693,8 @@ class BotGUI:
             self.var_taro_voice_pron.set(getattr(cfg, "TARO_VOICE_PRONUNCIATION", ""))
             self.var_read_max_chars.set(str(getattr(cfg, "READ_ALOUD_MAX_CHARS_JA", 150)))
             self.var_taro_voice_rpm.set(str(getattr(cfg, "TARO_VOICE_MAX_PER_MINUTE", 0)))
+            self.var_taro_vc_device.set(getattr(cfg, "TARO_VC_OUTPUT_DEVICE", ""))
+            self.var_taro_vc_volume.set(str(getattr(cfg, "TARO_VC_VOLUME", 50)))
             self.var_gimmick_enabled.set(getattr(cfg, "GIMMICK_ENABLED", True))
             self.var_gimmick_words.set(getattr(cfg, "GIMMICK_WORDS", "行進,ランダム,おなかすいた"))
             self.var_speech_gimmicks.set(getattr(cfg, "SPEECH_GIMMICKS", "ビクロイ=gg"))
@@ -752,6 +777,11 @@ class BotGUI:
             _rpm = self.var_taro_voice_rpm.get().strip()
             if _rpm.isdigit():
                 content = replace_value(content, "TARO_VOICE_MAX_PER_MINUTE", _rpm, is_string=False)
+            content = replace_value(content, "TARO_VC_OUTPUT_DEVICE",
+                                    self.var_taro_vc_device.get().replace('"', '').replace("'", ""))
+            _vc_vol = self.var_taro_vc_volume.get().strip()
+            if _vc_vol.isdigit():
+                content = replace_value(content, "TARO_VC_VOLUME", _vc_vol, is_string=False)
             content = replace_value(content, "TARO_VOICE_PRONUNCIATION",
                                     self.var_taro_voice_pron.get().replace('"', '').replace("'", ""))
             content = replace_value(content, "GIMMICK_ENABLED",
@@ -1014,6 +1044,14 @@ class BotGUI:
             except Exception as e:
                 logger.warning(f"VCモードを用意できませんでした: {e}")
 
+            # v4.59: 太郎の声をVCに流すスイッチ（起動時はオフ。ボタンか声で切り替える）
+            if self.bot_instance.get("read_aloud"):
+                lanes.set_vc_talk_toggle(self._set_taro_vc)
+                if getattr(config, 'TARO_VC_OUTPUT_DEVICE', ''):
+                    logger.info(f"太郎の声をVCに流す準備OK（オフ。出力先「{config.TARO_VC_OUTPUT_DEVICE}」"
+                                f"・音量{getattr(config, 'TARO_VC_VOLUME', 50)}%）")
+            self.root.after(0, self._update_vc_ui)
+
             logger.info("bot が稼働中です。停止ボタンで停止します。")
 
             # 俳句・謎かけタイマー設定（15〜25分のランダム間隔）
@@ -1154,7 +1192,42 @@ class BotGUI:
         self.root.after(0, self._update_vc_ui)
         return ok
 
+    VC_TALK_OFF_TEXT = "VCに太郎の声: 流さない（声でも切替:「太郎、VCでしゃべって」「太郎、VCでは黙って」）"
+
+    def toggle_taro_vc(self):
+        ra = (self.bot_instance or {}).get("read_aloud") if self.bot_running else None
+        if ra is None:
+            self._append_log("太郎の声をVCに流すのは「▶ 太郎＋読み上げ」で起動中に使えます", "WARNING")
+            return
+        if not self._set_taro_vc(not ra.taro_vc_on):
+            self._append_log("VCに流す出力先が空欄です。管理画面の「太郎の声をVCに流す出力先」を設定してください",
+                             "WARNING")
+
+    def _set_taro_vc(self, on: bool) -> bool:
+        """太郎の声をVCに流す／流さない。ボタン・声の命令の両方から呼ばれる（別スレッドから呼んでよい）"""
+        ra = (self.bot_instance or {}).get("read_aloud")
+        ok = bool(ra and ra.set_taro_vc(on))
+        self.root.after(0, self._update_vc_ui)
+        return ok
+
+    def _update_vc_talk_ui(self):
+        ra = (self.bot_instance or {}).get("read_aloud") if self.bot_running else None
+        if ra is None:
+            self.vc_talk_btn.config(state="disabled", text="🗣 太郎の声をVCに流す", bg=self.colors["border"],
+                                    fg=self.colors["text_dim"])
+            self.vc_talk_label.config(text=self.VC_TALK_OFF_TEXT, fg=self.colors["text_dim"])
+        elif ra.taro_vc_on:
+            self.vc_talk_btn.config(state="normal", text="🗣 VCに流すのをやめる", bg=self.colors["success"],
+                                    fg="white")
+            self.vc_talk_label.config(text=f"● VCに太郎の声: 流しています（音量{ra.taro_vc_volume}%）",
+                                      fg=self.colors["success"])
+        else:
+            self.vc_talk_btn.config(state="normal", text="🗣 太郎の声をVCに流す", bg=self.colors["border"],
+                                    fg=self.colors["text"])
+            self.vc_talk_label.config(text=self.VC_TALK_OFF_TEXT, fg=self.colors["text_dim"])
+
     def _update_vc_ui(self):
+        self._update_vc_talk_ui()
         vc = (self.bot_instance or {}).get("vc") if self.bot_running else None
         if vc is None:
             self.vc_btn.config(state="disabled", text="🎧 VCを聞く", bg=self.colors["border"],

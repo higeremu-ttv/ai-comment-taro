@@ -1279,6 +1279,82 @@ check("既定は軽量版で、断られたら上位版で作り直す",
       and _fb2_models == ["gemini-3.8-flash-lite-tts", "gemini-3.8-flash-tts"])
 wfb2.stop()
 
+# v4.59 太郎の発言をVCにも流す（VCモード中だけ・太郎の発言だけ・音量はVC用だけ小さく）
+import io as _io, wave as _wave, struct as _struct
+
+
+def _make_wav(amp=10000, n=800):
+    b = _io.BytesIO()
+    with _wave.open(b, "wb") as w:
+        w.setnchannels(1); w.setsampwidth(2); w.setframerate(24000)
+        w.writeframes(_struct.pack("<%dh" % n, *([amp] * n)))
+    return b.getvalue()
+
+
+def _peak(wav):
+    with _wave.open(_io.BytesIO(wav)) as w:
+        return max(abs(v) for v in _struct.unpack("<%dh" % w.getnframes(), w.readframes(w.getnframes())))
+
+
+class _VCOutCfg(_TaroCfg):
+    TARO_VC_OUTPUT_DEVICE = "Taro VC"
+    TARO_VC_VOLUME = 50
+
+
+_vc_sent, _main_played = [], []
+wvc = ra_mod.ReadAloudWorker(_VCOutCfg(), gemini_api_key="x", base_dir=_ra_dir,
+                             play_func=_main_played.append, pipeline_func=lambda *a, **k: _make_wav(),
+                             engine_check=lambda: True, taro_synth=lambda text, **kw: _make_wav(),
+                             vc_play_func=lambda wav, dev: _vc_sent.append((wav, dev)))
+wvc.normalize_enabled = False
+wvc.set_taro_vc(False)
+wvc.start()
+wvc.enqueue_taro("VCオフのとき")
+_wait_played(_main_played, 1)
+time.sleep(0.2)
+check("起動時（スイッチがオフ）は太郎の声をVCに流さない", len(_main_played) == 1 and _vc_sent == [])
+wvc.set_taro_vc(True)
+wvc.enqueue_comment("viewer1", "視聴者のコメント")
+wvc.enqueue_taro("VCオンのとき")
+_wait_played(_main_played, 3)
+time.sleep(0.3)
+check("スイッチがオンなら太郎の発言だけVCに流す（視聴者コメントは流さない）",
+      len(_main_played) == 3 and len(_vc_sent) == 1 and _vc_sent[0][1] == "Taro VC")
+check("VCに流す分だけ音量を下げる（配信の音はそのまま）",
+      _peak(_main_played[-1]) == 10000 and abs(_peak(_vc_sent[0][0]) - 5000) <= 1)
+wvc.stop()
+
+_vc_sent2, _main2 = [], []
+wvc2 = ra_mod.ReadAloudWorker(_TaroCfg(), gemini_api_key="x", base_dir=_ra_dir,
+                              play_func=_main2.append, pipeline_func=_pipe_rec,
+                              engine_check=lambda: True, taro_synth=lambda text, **kw: _make_wav(),
+                              vc_play_func=lambda wav, dev: _vc_sent2.append(dev))
+_ok2 = wvc2.set_taro_vc(True)
+wvc2.start()
+wvc2.enqueue_taro("出力先なし")
+_wait_played(_main2, 1)
+time.sleep(0.2)
+check("VCの出力先が空欄ならスイッチはオンにならず流さない", _ok2 is False and _vc_sent2 == [])
+wvc2.stop()
+
+
+def _vc_boom(wav, dev):
+    raise RuntimeError("出力先が見つかりません")
+
+
+_main3 = []
+wvc3 = ra_mod.ReadAloudWorker(_VCOutCfg(), gemini_api_key="x", base_dir=_ra_dir,
+                              play_func=_main3.append, pipeline_func=_pipe_rec,
+                              engine_check=lambda: True, taro_synth=lambda text, **kw: _make_wav(),
+                              vc_play_func=_vc_boom)
+wvc3.set_taro_vc(True)
+wvc3.start()
+wvc3.enqueue_taro("失敗しても")
+wvc3.enqueue_taro("2回目")
+_wait_played(_main3, 2)
+check("VCに流せなくても配信の太郎の声は止まらない", len(_main3) == 2)
+wvc3.stop()
+
 check("上限エラーは『1分あたり』と分かる形で記録する",
       "1分あたり10回" in gtts._describe_error(_FakeResp(429, json_data={"error": {"details": [
           {"violations": [{"quotaId": "GenerateRequestsPerMinutePerProjectPerModel", "quotaValue": "10"}]}]}})))
@@ -1565,6 +1641,11 @@ check("VC命令: 「VC聞いて」→聞く", lanes_vc._detect_vc_command("VC聞
 check("VC命令: 「ボイチャはいいよ」→聞かない", lanes_vc._detect_vc_command("ボイチャはいいよ") is False)
 check("VC命令: 「vc聞かなくていいよ」→聞かない", lanes_vc._detect_vc_command("vc聞かなくていいよ") is False)
 check("VC命令: VCと言っていなければ命令ではない", lanes_vc._detect_vc_command("これ聞いて") is None)
+check("VC声命令: 「VCでしゃべって」→流す", lanes_vc._detect_vc_talk_command("太郎、VCでしゃべって") is True)
+check("VC声命令: 「VCでは黙って」→流さない", lanes_vc._detect_vc_talk_command("太郎、VCでは黙って") is False)
+check("VC声命令: 「VCでしゃべるのやめて」→流さない", lanes_vc._detect_vc_talk_command("VCでしゃべるのやめて") is False)
+check("VC声命令: 「ボイチャに声出して」→流す", lanes_vc._detect_vc_talk_command("ボイチャに声出して") is True)
+check("VC声命令: 「VC聞いて」は聞く側の命令", lanes_vc._detect_vc_talk_command("VC聞いて") is None)
 
 lanes_vc.on_vc_speech("ナイス、今の撃ち合い勝ったね")
 check("VC: 呼ばれていなければ返事しない（割り込まない）", tw_vc.sent == [] and _vc_prompts == [])
