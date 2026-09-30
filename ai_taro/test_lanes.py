@@ -1518,6 +1518,12 @@ _vc_none = vcl.VCListener(_vc_cfg, transcribe=lambda a: "", on_text=lambda t: No
                           device_finder=lambda n: None)
 check("VC: 出力先が見つからなければ聞き始めない", _vc_none.set_listening(True) is False and not _vc_none.listening)
 
+check("VC: 「チョチョチョ…」のような繰り返しは聞き間違いとして捨てる",
+      vcl.looks_like_hallucination("チョ" * 30))
+check("VC: 「ナイス、ナイス、ナイス」程度の普通の繰り返しは捨てない",
+      not vcl.looks_like_hallucination("ナイス、ナイス、ナイス。どこで返せる?"))
+check("VC: 普通の発言は捨てない", not vcl.looks_like_hallucination("一旦あおちゃんは起こしてもらえるかも。"))
+
 # 頭脳（lane_manager）側
 cfg_vc = FakeConfig()
 gen_vc = CommentGenerator(cfg_vc)

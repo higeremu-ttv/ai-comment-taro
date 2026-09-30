@@ -35,6 +35,13 @@ def _patch_numpy_fromstring():
     np._taro_fromstring_patched = True
 
 
+def looks_like_hallucination(text: str) -> bool:
+    """Whisperが雑音から作りがちな「同じ音の延々とした繰り返し」を見分ける。
+    例:「チョチョチョチョ…」（2026-10-01 実際のVCで発生）。1〜3文字のかたまりが5回以上続けば捨てる"""
+    import re
+    return re.search(r"(.{1,3})\1{4,}", text) is not None
+
+
 def find_loopback_device(name_part: str):
     """名前の一部が一致する出力先の「横取り録音」口を探す。見つからなければ None"""
     _patch_numpy_fromstring()
@@ -169,6 +176,9 @@ class VCListener:
                 logger.warning(f"[VC] 文字起こしエラー: {e}")
                 continue
             if len(text) < self.min_chars:
+                continue
+            if looks_like_hallucination(text):
+                logger.info(f"[VC] 聞き間違いらしい繰り返しのため捨てました: {text[:20]}…")
                 continue
             try:
                 self._on_text(text)
