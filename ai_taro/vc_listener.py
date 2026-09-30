@@ -52,6 +52,42 @@ def find_loopback_device(name_part: str):
     return None
 
 
+class VCWhisper:
+    """v4.59: VCのふだんの文字起こし専用のWhisper（配信者のマイク用とは別の実体）。
+    同じモデルを2か所で順番待ちして、配信者の声の聞き取りが遅れた（2026-10-01の配信）ため分けた。
+    ふだんは合図の言葉（返事して・太郎 等）を拾えれば足りるので、既定は軽めの medium。
+    初めて使うときに読み込む（数秒かかる）"""
+
+    def __init__(self, model_size="medium", initial_prompt="", device="cuda", compute_type="float16"):
+        self.model_size = model_size
+        self.initial_prompt = initial_prompt
+        self._device = device
+        self._compute_type = compute_type
+        self._model = None
+        self._lock = threading.Lock()
+
+    def _load(self):
+        from faster_whisper import WhisperModel
+        for dev, ct in ((self._device, self._compute_type), ("cpu", "int8")):
+            try:
+                self._model = WhisperModel(self.model_size, device=dev, compute_type=ct)
+                logger.info(f"[VC] VC用のWhisperを読み込みました（{self.model_size} / {dev}）")
+                return
+            except Exception as e:
+                logger.warning(f"[VC] VC用Whisperの読み込み失敗（{dev}）: {e}")
+
+    def transcribe(self, samples) -> str:
+        with self._lock:
+            if self._model is None:
+                self._load()
+            if self._model is None:
+                return ""
+            segments, _ = self._model.transcribe(
+                samples, language="ja", beam_size=3, vad_filter=True, without_timestamps=True,
+                initial_prompt=self.initial_prompt or None, condition_on_previous_text=False)
+            return "".join(s.text.strip() for s in segments if s.no_speech_prob <= 0.85).strip()
+
+
 class Utterance:
     """音の大きさで発話を区切る（録音ブロックを順に渡すと、区切れたときに発話を返す）"""
 
@@ -105,6 +141,11 @@ class VCListener:
         self._stop = threading.Event()
         self._jobs = queue.Queue(maxsize=10)
         self._threads = []
+        # v4.59: 直近の音を取っておく（合図が出たら、さかのぼって精度の高いWhisperで聞き直すため）
+        from collections import deque
+        self.lookback_sec = getattr(config, "VC_LOOKBACK_SECONDS", 30)
+        self._recent = deque(maxlen=max(1, round(self.lookback_sec / BLOCK_SEC)))
+        self._recent_lock = threading.Lock()
 
     # ------------------------------------------------------------
     # 切り替え（GUIのボタン・声の命令から呼ばれる）
@@ -142,6 +183,15 @@ class VCListener:
     def stop(self):
         self.set_listening(False)
 
+    def get_recent_audio(self):
+        """直近 lookback_sec 秒ぶんの音（16kHz float32）。聞いていない・まだ無ければ None"""
+        import numpy as np
+        with self._recent_lock:
+            blocks = list(self._recent)
+        if not blocks:
+            return None
+        return np.concatenate(blocks)
+
     # ------------------------------------------------------------
     # 録音（出力の横取り）
     # ------------------------------------------------------------
@@ -152,6 +202,8 @@ class VCListener:
             with dev.recorder(samplerate=SAMPLE_RATE, channels=1) as rec:
                 while not self._stop.is_set():
                     block = rec.record(numframes=frames).reshape(-1).astype("float32")
+                    with self._recent_lock:
+                        self._recent.append(block)
                     audio = utt.feed(block)
                     if audio is not None:
                         try:

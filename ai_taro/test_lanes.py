@@ -1546,7 +1546,7 @@ check("VC: 仲間の発言は手帳（会話履歴）に入れない",
       not any("撃ち合い" in str(m) for m in gen_vc._conversation_history))
 lanes_vc.on_vc_speech("じゃあ次どこ行く？")
 check("VC会話モード: 返事の直後は名前なしでも返事する", len(tw_vc.sent) == 2)
-check("VC会話モード: 続きだと分かる形でGeminiに渡す", "会話の続き" in _vc_prompts[-1])
+check("VC会話モード: 続きの発言をGeminiに渡す", "じゃあ次どこ行く" in _vc_prompts[-1])
 lanes_vc.on_vc_speech("そっちの建物にしよう")
 check("VC会話モード: 3往復目まで返事する", len(tw_vc.sent) == 3)
 lanes_vc.on_vc_speech("オッケー、行こう")
@@ -1559,6 +1559,30 @@ check("VC: 「タロウ」と書かれても呼ばれたと分かる（20秒た�
 lanes_vc._vc_conv_until = 0.0
 lanes_vc.on_vc_speech("関係ない仲間どうしの話")
 check("VC: 会話モードが切れたら、呼ばれない発言には返事しない", len(tw_vc.sent) == 4)
+
+# v4.59 合図（「返事して」「返事してくれない」等）と、さかのぼり
+lanes_vc._last_vc_reply -= 30
+lanes_vc.on_vc_speech("ねえ返事してくれないじゃん")
+check("VC合図: 仲間の「返事してくれない」で返事する（名前なしでも）", len(tw_vc.sent) == 5)
+_lb_calls = []
+lanes_vc.set_vc_lookback(lambda: _lb_calls.append(1) or "さっき太郎って呼んだんだけど聞こえた？", lambda: True)
+lanes_vc._last_vc_reply -= 30
+lanes_vc._vc_conv_until = 0.0
+lanes_vc.on_speech("VCに返事して")
+check("VC合図: マイクの「VCに返事して」で返事する（太郎と呼ばなくても）", len(tw_vc.sent) == 6)
+check("VC合図: 直近のVCをさかのぼって聞き直し、それを返事の材料にする",
+      _lb_calls == [1] and "さっき太郎って呼んだ" in _vc_prompts[-1])
+check("VC合図: マイクからの合図だと分かる形で渡す", "配信者があなたに" in _vc_prompts[-1])
+lanes_vc._last_vc_reply -= 30
+lanes_vc._vc_conv_until = 0.0
+lanes_vc.on_speech("太郎、今のVC聞いてた？")
+check("VC合図: 「太郎、今のVC聞いてた？」も合図（聞くのオン命令と取り違えない）", len(tw_vc.sent) == 7)
+check("マイク合図: VCを聞いていないときは合図扱いしない",
+      LaneManager(cfg_vc, gen_vc, FakeTwitch(), FakeAudio()).is_mic_vc_nudge("返事してくれない") is False)
+_vr = vcl.VCListener(_vc_cfg, transcribe=lambda a: "", on_text=lambda t: None, device_finder=lambda n: None)
+check("VC: 録っていなければ、さかのぼる音は無い", _vr.get_recent_audio() is None)
+_vr._recent.extend([_loud, _sil])
+check("VC: 直近の音をつなげて返す", len(_vr.get_recent_audio()) == 3200)
 
 _toggles = []
 lanes_vc.set_vc_toggle(lambda on: _toggles.append(on) or True)

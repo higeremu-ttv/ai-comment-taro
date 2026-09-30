@@ -122,45 +122,87 @@ class LaneManager:
         self._send_priority(msg)
 
     VC_NAME_VARIANTS = ("太郎", "たろう", "タロウ", "太朗")  # Whisperの書き方の揺れ
+    # v4.59: 太郎が反応しなかったときに言われがちな言葉（VCからでもマイクからでも合図になる）
+    VC_NUDGE_WORDS = ("返事して", "返事ない", "返事しない", "返事くれ", "返事は", "答えて",
+                      "無視", "反応ない", "反応しない", "シカト")
+    # マイク側で「VC」と一緒に言われたら合図とみなす言葉
+    VC_ASK_WORDS = ("返事", "答え", "反応", "呼ばれ", "聞いてた", "聞いてる", "話しかけ")
+
+    def set_vc_lookback(self, transcribe_recent: Callable, is_listening: Callable):
+        """transcribe_recent(): 直近のVCを精度の高いWhisperで文字にした文字列
+        is_listening(): 今VCを聞いているか"""
+        self._vc_lookback = transcribe_recent
+        self._vc_is_listening = is_listening
+
+    def _vc_listening(self) -> bool:
+        fn = getattr(self, "_vc_is_listening", None)
+        return bool(fn and fn())
+
+    def is_mic_vc_nudge(self, text: str) -> bool:
+        """配信者のマイクの発言が「VCに返事して」系の合図か（VCを聞いているときだけ）"""
+        if not self._vc_listening():
+            return False
+        low = text.lower()
+        if any(w in text for w in self.VC_NUDGE_WORDS):
+            return True
+        return any(w in low for w in self.VC_WORDS) and any(w in text for w in self.VC_ASK_WORDS)
 
     def on_vc_speech(self, text: str):
-        """VCで聞き取れた発言。呼ばれたとき（と、その直後の会話モード中）だけ返事し、
-        それ以外は一時メモに置くだけ（割り込まない）"""
+        """VCで聞き取れた発言。合図（太郎と呼ぶ・「返事して」「返事してくれない」等）か、
+        返事の直後の会話モード中だけ返事する。それ以外は一時メモに置くだけ（割り込まない）"""
         logger.info(f"[VC] {text}")
-        recent = "／".join(self._vc_memo)
         self._vc_memo.append(text)
         ai_name = getattr(self.config, 'AI_NAME', '太郎')
         now = time.time()
         called = ai_name in text or any(v in text for v in self.VC_NAME_VARIANTS)
+        nudged = any(w in text for w in self.VC_NUDGE_WORDS)
         max_turns = getattr(self.config, 'VC_CONVERSATION_MAX_TURNS', 3)
-        in_conv = (not called and now < self._vc_conv_until and self._vc_conv_turns < max_turns)
-        if not (called or in_conv):
-            return
-        if called:
-            if now - self._last_vc_reply < getattr(self.config, 'VC_REPLY_COOLDOWN', 20) \
-                    and now >= self._vc_conv_until:
-                logger.info("[VC] 呼ばれたが、直前に返事したばかりなので見送り")
-                return
-            self._vc_conv_turns = 0  # 新しい会話の始まり
-        else:
+        in_conv = (now < self._vc_conv_until and self._vc_conv_turns < max_turns)
+        if called or nudged:
+            self._reply_vc(text, from_vc=True, fresh=not in_conv)
+        elif in_conv:
             logger.info(f"[VC会話モード] 続きの発言として返事: {text[:30]}")
-        context = f"直前のVCの会話：{recent}。" if recent else ""
-        how = (f"あなた（{ai_name}）に「{text}」と話しかけました。" if called else
-               f"「{text}」と言いました（さっきあなたが返事をした会話の続きです）。")
-        prompt = (f"配信者がゲームのボイスチャットで一緒に遊んでいる仲間（誰かは分からない）が、"
-                  f"{how}{context}"
-                  f"配信を見ている視聴者の{ai_name}として、チャットで自然に1文で返事してください。"
+            self._reply_vc(text, from_vc=True, fresh=False, lookback=False)
+
+    def _reply_vc(self, trigger: str, from_vc: bool, fresh: bool = True, lookback: bool = True):
+        """直近のVCをさかのぼって聞き直し、流れを踏まえて返事する"""
+        ai_name = getattr(self.config, 'AI_NAME', '太郎')
+        now = time.time()
+        if fresh and now - self._last_vc_reply < getattr(self.config, 'VC_REPLY_COOLDOWN', 20):
+            logger.info("[VC] 合図があったが、直前に返事したばかりなので見送り")
+            return
+        if fresh:
+            self._vc_conv_turns = 0
+        heard = ""
+        fn = getattr(self, "_vc_lookback", None)
+        if lookback and fn:
+            try:
+                heard = (fn() or "").strip()
+                logger.info(f"[VCさかのぼり] {heard[:60]}")
+            except Exception as e:
+                logger.warning(f"[VCさかのぼり] 失敗: {e}")
+        if not heard:
+            heard = "／".join(self._vc_memo)
+        sec = getattr(self.config, 'VC_LOOKBACK_SECONDS', 30)
+        who = (f"そのあと仲間が「{trigger}」と言いました。" if from_vc else
+               f"そして配信者があなたに「{trigger}」と言いました（VCに返事してほしいという合図）。")
+        prompt = (f"配信者がゲームのボイスチャットで仲間と遊んでいます。"
+                  f"直近{sec}秒のボイスチャットの会話（誰が話したかは分からない・聞き取りに誤りがあり得る）："
+                  f"「{heard}」。{who}"
+                  f"この中にあなた（{ai_name}）に向けられた言葉があればそれに、なければ会話の流れに対して、"
+                  f"配信を見ている視聴者の{ai_name}としてチャットで自然に1文で返事してください。"
                   f"仲間の名前は分からないので呼ばないこと。日本語のみ。")
         comment = self.comment_gen._call_gemini(prompt, smart=getattr(self.config, 'MENTION_USE_SMART', True))
         if comment:
             self._last_vc_reply = now
             self._vc_conv_turns += 1
+            max_turns = getattr(self.config, 'VC_CONVERSATION_MAX_TURNS', 3)
             if self._vc_conv_turns >= max_turns:
                 self._vc_conv_until = 0.0
                 logger.info(f"[VC会話モード] {max_turns}往復で一区切り")
             else:
                 self._vc_conv_until = time.time() + getattr(self.config, 'VC_CONVERSATION_WINDOW', 20)
-            logger.info(f"[VC呼びかけ反応] {text} → {comment}")
+            logger.info(f"[VC呼びかけ反応] {trigger} → {comment}")
             self._send_priority(comment)
 
     # ============================================================
@@ -285,6 +327,11 @@ class LaneManager:
 
     def on_speech(self, text: str):
         """音声認識結果を受け取り、レーンに振り分ける"""
+        # v4.59: 「VCに返事して」「返事してくれない」等（VCを聞いているときだけ）
+        if self.is_mic_vc_nudge(text):
+            logger.info(f"[VC] 配信者からの合図: {text[:30]}")
+            self._reply_vc(text, from_vc=False)
+            return
         self._check_speech_gimmick(text)  # v4.54: ビクロイ→gg 等
         is_direct, question = self._detect_direct_call(text)
         now = time.time()

@@ -993,10 +993,22 @@ class BotGUI:
 
             # v4.59: VCモード（2本目の耳）。用意だけして、聞き始めるのはボタンか声の命令で
             try:
-                from vc_listener import VCListener
-                vc = VCListener(config, audio.transcribe_samples, lanes.on_vc_speech)
+                from vc_listener import VCListener, VCWhisper
+                # v4.59: ふだんのVCの文字起こしは配信者用とは別のWhisperで（順番待ちで配信者の声が遅れないように）
+                vc_model = getattr(config, 'VC_WHISPER_MODEL', 'medium')
+                if vc_model:
+                    vc_transcribe = VCWhisper(
+                        vc_model, initial_prompt=getattr(config, 'VC_WHISPER_PROMPT', '')).transcribe
+                else:
+                    vc_transcribe = audio.transcribe_samples
+                vc = VCListener(config, vc_transcribe, lanes.on_vc_speech)
                 self.bot_instance["vc"] = vc
                 lanes.set_vc_toggle(self._set_vc)
+                # 合図が出たら、直近のVCを配信者用の精度の高いWhisperで聞き直す
+                def _vc_recent_text(vc=vc, audio=audio):
+                    a = vc.get_recent_audio()
+                    return audio.transcribe_samples(a) if a is not None else ""
+                lanes.set_vc_lookback(_vc_recent_text, lambda vc=vc: vc.listening)
                 self.root.after(0, self._update_vc_ui)
                 logger.info(f"VCモード: 準備OK（オフ。出力先「{vc.device_name}」を聞きます）")
             except Exception as e:
