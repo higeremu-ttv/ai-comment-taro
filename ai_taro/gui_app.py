@@ -932,7 +932,9 @@ class BotGUI:
                 return
 
             logger.info("=" * 50)
-            logger.info("AIコメント太郎 v4.59 を起動します（VCモード）")
+            # 起動のしかたを記録に残す（以前は常に「VCモード」と出ていて、VCを使った日と区別できなかった）
+            _mode_name = "太郎＋読み上げ" if getattr(config, 'READ_ALOUD_ENABLED', False) else "太郎だけ"
+            logger.info(f"AIコメント太郎 v4.59 を「{_mode_name}」で起動します")
             logger.info(f"チャンネル: #{config.CHANNEL_NAME}")
             _engine = getattr(config, 'SPEECH_ENGINE', 'whisper')
             _engine_label = f"faster-whisper {getattr(config, 'WHISPER_MODEL_SIZE', 'medium')}（ローカル）" if _engine == 'whisper' else "Google Web Speech API"
