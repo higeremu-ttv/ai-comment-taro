@@ -66,22 +66,24 @@ def scale_wav(wav: bytes, percent: float) -> bytes:
 
 
 def play_wav_to_device(wav: bytes, device_name: str):
-    """v4.59: 名前に device_name を含むWindowsの出力先で鳴らす（太郎の声をVCに流す用）"""
+    """v4.59: 名前に device_name を含むWindowsの出力先で鳴らす（太郎の声をVCに流す用）。
+    SoundCard は最初に読み込んだ手（スレッド）でしかWindowsの音の準備（COM）をしないため、
+    別の手から鳴らすと Error 0x800401f0 で失敗する（2026-10-02 配信で発生・再現済み）。鳴らす手ごとに準備する"""
     import io
     import wave
     import numpy as np
-    from vc_listener import _patch_numpy_fromstring
-    _patch_numpy_fromstring()
-    import soundcard as sc
-    spk = next((s for s in sc.all_speakers() if device_name.lower() in s.name.lower()), None)
-    if spk is None:
-        raise RuntimeError(f"出力先「{device_name}」が見つかりません")
-    with wave.open(io.BytesIO(wav)) as w:
-        ch, rate = w.getnchannels(), w.getframerate()
-        if w.getsampwidth() != 2:
-            raise RuntimeError("16bitのWAVではありません")
-        data = np.frombuffer(w.readframes(w.getnframes()), dtype=np.int16).astype(np.float32) / 32768.0
-    spk.play(data.reshape(-1, ch), samplerate=rate)
+    from vc_listener import com_for_this_thread
+    with com_for_this_thread():
+        import soundcard as sc
+        spk = next((s for s in sc.all_speakers() if device_name.lower() in s.name.lower()), None)
+        if spk is None:
+            raise RuntimeError(f"出力先「{device_name}」が見つかりません")
+        with wave.open(io.BytesIO(wav)) as w:
+            ch, rate = w.getnchannels(), w.getframerate()
+            if w.getsampwidth() != 2:
+                raise RuntimeError("16bitのWAVではありません")
+            data = np.frombuffer(w.readframes(w.getnframes()), dtype=np.int16).astype(np.float32) / 32768.0
+        spk.play(data.reshape(-1, ch), samplerate=rate)
 
 
 def normalize_wav(wav: bytes, target_dbfs: float = -21.0, peak_dbfs: float = -3.0) -> bytes:

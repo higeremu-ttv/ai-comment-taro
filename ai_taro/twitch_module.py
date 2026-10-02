@@ -281,6 +281,7 @@ class TwitchModule:
                     )
                     self._channel = None
                     self._send_task = None
+                    self._stopped = False  # v4.59: 停止したら送信の係も終わる（前の太郎の係が裏で再送し続けないように）
 
                 async def event_ready(self):
                     logger.info(f"Twitchに接続しました: {self.nick}")
@@ -364,6 +365,17 @@ class TwitchModule:
                 async def event_error(self, error: Exception, data=None):
                     logger.error(f"Twitchエラー: {error}")
 
+                async def _reconnect_for_send(self):
+                    """送信に失敗したとき、Twitchにつなぎ直す（失敗しても次の再送でまた試す）"""
+                    if self._stopped:
+                        return
+                    try:
+                        logger.info("Twitchにつなぎ直します...")
+                        await asyncio.wait_for(self._connection._connect(), timeout=20)
+                        logger.info("Twitchにつなぎ直しました")
+                    except Exception as e:
+                        logger.warning(f"Twitchへのつなぎ直しに失敗: {e}")
+
                 async def _message_sender(self):
                     """キューからメッセージを取り出して送信するループ。
 
@@ -373,7 +385,7 @@ class TwitchModule:
                     """
                     pending = None       # 送信失敗時の再送用 (message, is_priority)
                     fail_count = 0       # 連続失敗回数
-                    while True:
+                    while not self._stopped:
                         try:
                             # v4.53: 投稿時刻が来たギミック単語を通常キューへ流す
                             gimmick = twitch_module_ref.pop_due_gimmick()
@@ -431,6 +443,9 @@ class TwitchModule:
                                     )
                                     pending = (message, is_priority)
                                     self._channel = None  # 次回チャンネルを取り直す
+                                    # v4.59: 「closing transport」は接続が半分切れたまま twitchio が気づかない状態
+                                    # （2026-10-02 配信で13分間すべて失敗）。待つだけでは直らないので、こちらからつなぎ直す
+                                    await self._reconnect_for_send()
                                     await asyncio.sleep(wait)
                                 else:
                                     logger.error(f"送信を{fail_count}回失敗したため、このメッセージは破棄します: {message}")
@@ -494,15 +509,28 @@ class TwitchModule:
 
     def stop(self):
         """Twitch botを停止する"""
+        if self._bot:
+            self._bot._stopped = True  # v4.59: 送信の係を終わらせる（再送待ちのメッセージも捨てる）
+        # asyncioの未処理例外ログを抑制（切断途中の twitchio の内部エラーが画面に出ないよう、切る前に）
+        if self._loop and not self._loop.is_closed():
+            self._loop.set_exception_handler(lambda loop, ctx: None)
+            if self._bot and self._bot._send_task:
+                self._loop.call_soon_threadsafe(self._bot._send_task.cancel)
         if self._bot and self._loop:
             try:
                 future = asyncio.run_coroutine_threadsafe(self._bot.close(), self._loop)
                 future.result(timeout=5)
             except Exception as e:
                 logger.debug(f"Twitch切断時のエラー（無視）: {e}")
-        # asyncioの未処理例外ログを抑制
         if self._loop and not self._loop.is_closed():
-            self._loop.set_exception_handler(lambda loop, ctx: None)
+            # v4.59: twitchio は close() しても動き続ける（run_forever のまま）ため、ここで止める。
+            # 止めないと前の太郎の送信の係が裏で再送し続けていた（2026-10-02 配信の記録で確認）
+            try:
+                self._loop.call_soon_threadsafe(self._loop.stop)
+            except RuntimeError:
+                pass
+        if getattr(self, '_thread', None):
+            self._thread.join(timeout=5)
         logger.info("Twitch連携モジュールを停止しました")
 
     @property

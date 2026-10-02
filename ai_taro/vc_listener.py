@@ -42,6 +42,25 @@ def looks_like_hallucination(text: str) -> bool:
     return re.search(r"(.{1,3})\1{4,}", text) is not None
 
 
+class com_for_this_thread:
+    """v4.59: この手（スレッド）でWindowsの音の準備（COM）をする。
+    SoundCard は最初に読み込んだ手でしか準備しないため、別の手で録音・再生すると
+    Error 0x800401f0 で失敗する（2026-10-02 配信で発生・再現済み）。with で囲んで使う"""
+
+    def __enter__(self):
+        import ctypes
+        _patch_numpy_fromstring()
+        import soundcard  # noqa: F401  先に読み込む（SoundCard自身の準備と重ねるとエラー扱いされる）
+        self._hr = ctypes.windll.ole32.CoInitializeEx(None, 0)  # 0 = MULTITHREADED（SoundCardと同じ）
+        return self
+
+    def __exit__(self, *exc):
+        import ctypes
+        if self._hr in (0, 1):  # S_OK / S_FALSE のときだけ後始末（呼んだ回数とそろえる）
+            ctypes.windll.ole32.CoUninitialize()
+        return False
+
+
 def find_loopback_device(name_part: str):
     """名前の一部が一致する出力先の「横取り録音」口を探す。見つからなければ None"""
     _patch_numpy_fromstring()
@@ -199,7 +218,7 @@ class VCListener:
         utt = Utterance(**self._utt_args)
         frames = int(SAMPLE_RATE * BLOCK_SEC)
         try:
-            with dev.recorder(samplerate=SAMPLE_RATE, channels=1) as rec:
+            with com_for_this_thread(), dev.recorder(samplerate=SAMPLE_RATE, channels=1) as rec:
                 while not self._stop.is_set():
                     block = rec.record(numframes=frames).reshape(-1).astype("float32")
                     with self._recent_lock:
