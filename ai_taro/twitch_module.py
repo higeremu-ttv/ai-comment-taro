@@ -282,6 +282,10 @@ class TwitchModule:
                     self._channel = None
                     self._send_task = None
                     self._stopped = False  # v4.59: 停止したら送信の係も終わる（前の太郎の係が裏で再送し続けないように）
+                    # v4.59: 接続の様子を記録するための数字（2026-10-02 の切断の原因が追えなかったため）
+                    self._last_recv = time.time()   # 最後にTwitchから何か届いた時刻
+                    self._recv_comments = 0         # 受け取ったコメント数（状態の記録ごとに0に戻す）
+                    self._last_status_log = time.time()
 
                 async def event_ready(self):
                     logger.info(f"Twitchに接続しました: {self.nick}")
@@ -314,6 +318,7 @@ class TwitchModule:
                             twitch_module_ref.extract_emote_names(content, getattr(message, 'tags', None)))
                         # コメントを記録（除外アカウントは内部でフィルタ）
                         twitch_module_ref.record_chat_message(username)
+                        self._recv_comments += 1
                         logger.debug(f"他の視聴者コメント受信: {username}: {content}")
 
                         # ボット通知への反応（nightbot等のお知らせ系）
@@ -358,12 +363,57 @@ class TwitchModule:
                     except Exception as e:
                         logger.debug(f"event_messageエラー: {e}")
 
+                async def event_raw_data(self, data):
+                    self._last_recv = time.time()
+
+                async def event_reconnect(self):
+                    logger.info("Twitchから「つなぎ直して」の連絡があり、つなぎ直します")
+
+                def connection_report(self) -> str:
+                    """今の接続の様子を1行で（記録用）"""
+                    try:
+                        conn = self._connection
+                        ws = conn._websocket
+                        keeper = conn._keeper
+                        parts = [
+                            f"最後の受信={int(time.time() - self._last_recv)}秒前",
+                            f"接続={'あり' if conn.is_alive else 'なし'}",
+                        ]
+                        if ws is not None:
+                            parts.append(f"ws.closed={ws.closed}")
+                            if ws.close_code is not None:
+                                parts.append(f"切断コード={ws.close_code}")
+                            if ws.exception() is not None:
+                                parts.append(f"ws例外={ws.exception()!r}")
+                            transport = getattr(getattr(ws, "_writer", None), "transport", None)
+                            if transport is not None:
+                                parts.append(f"送信口が閉じかけ={transport.is_closing()}")
+                        if keeper is not None:
+                            if keeper.done():
+                                exc = None if keeper.cancelled() else keeper.exception()
+                                parts.append(f"受信係=停止（{'取り消し' if keeper.cancelled() else repr(exc)}）")
+                            else:
+                                parts.append("受信係=動作中")
+                        return " / ".join(parts)
+                    except Exception as e:
+                        return f"（様子を取れませんでした: {e}）"
+
+                def _maybe_log_status(self):
+                    """10分ごとに接続の様子と受け取ったコメント数を記録する"""
+                    if time.time() - self._last_status_log < 600:
+                        return
+                    logger.info(f"[Twitch状態] 10分間のコメント受信 {self._recv_comments}件 / {self.connection_report()}")
+                    self._recv_comments = 0
+                    self._last_status_log = time.time()
+
                 async def event_channel_joined(self, channel):
                     self._channel = channel
                     logger.info(f"チャンネルに参加しました: #{channel.name}")
 
                 async def event_error(self, error: Exception, data=None):
-                    logger.error(f"Twitchエラー: {error}")
+                    import traceback
+                    logger.error(f"Twitchエラー: {error!r}" + (f"（受信データ: {str(data)[:120]}）" if data else ""))
+                    logger.error("".join(traceback.format_exception(type(error), error, error.__traceback__)).rstrip())
 
                 async def _reconnect_for_send(self):
                     """送信に失敗したとき、Twitchにつなぎ直す（失敗しても次の再送でまた試す）"""
@@ -387,6 +437,7 @@ class TwitchModule:
                     fail_count = 0       # 連続失敗回数
                     while not self._stopped:
                         try:
+                            self._maybe_log_status()
                             # v4.53: 投稿時刻が来たギミック単語を通常キューへ流す
                             gimmick = twitch_module_ref.pop_due_gimmick()
                             if gimmick:
@@ -441,6 +492,7 @@ class TwitchModule:
                                         f"送信失敗（{fail_count}回目）: {e} "
                                         f"→ {wait}秒後に再送します。Twitch接続が切れている可能性があります"
                                     )
+                                    logger.warning(f"[Twitch状態] 送信失敗時: {self.connection_report()}")
                                     pending = (message, is_priority)
                                     self._channel = None  # 次回チャンネルを取り直す
                                     # v4.59: 「closing transport」は接続が半分切れたまま twitchio が気づかない状態

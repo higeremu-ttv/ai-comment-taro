@@ -1355,6 +1355,25 @@ _wait_played(_main3, 2)
 check("VCに流せなくても配信の太郎の声は止まらない", len(_main3) == 2)
 wvc3.stop()
 
+# v4.59 捨てられていたエラー表示（stderr）を記録に流す
+import logging as _lg_err
+import gui_app as _gui_err
+_err_records = []
+
+
+class _ErrH(_lg_err.Handler):
+    def emit(self, record):
+        _err_records.append(record.getMessage())
+
+
+_lg_err.getLogger("stderr_test").addHandler(_ErrH())
+_w = _gui_err._StderrToLog("stderr_test")
+_w.write("1行目\n2行")
+_w.write("目の続き\n\n")
+_w.write("最後の行")
+_w.flush()
+check("stderrへの出力を1行ずつ記録に流す（空行は捨てる）", _err_records == ["1行目", "2行目の続き", "最後の行"])
+
 check("上限エラーは『1分あたり』と分かる形で記録する",
       "1分あたり10回" in gtts._describe_error(_FakeResp(429, json_data={"error": {"details": [
           {"violations": [{"quotaId": "GenerateRequestsPerMinutePerProjectPerModel", "quotaValue": "10"}]}]}})))

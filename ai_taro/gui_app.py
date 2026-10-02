@@ -45,6 +45,52 @@ def make_file_log_handler(base_dir: str = ""):
     return handler
 
 
+class _StderrToLog:
+    """v4.59: 画面だけで動かすとき（pythonw）は sys.stderr が無く、ライブラリが直接出すエラー表示
+    （twitchio の内部エラー等）がどこにも残らなかった。記録（logger）へ流す"""
+
+    def __init__(self, name="stderr"):
+        self._log = logging.getLogger(name)
+        self._buf = ""
+
+    def write(self, text):
+        self._buf += str(text)
+        while "\n" in self._buf:
+            line, self._buf = self._buf.split("\n", 1)
+            if line.strip():
+                self._log.error(line.rstrip())
+        return len(text)
+
+    def flush(self):
+        if self._buf.strip():
+            self._log.error(self._buf.rstrip())
+        self._buf = ""
+
+
+def install_error_capture():
+    """v4.59: 拾われずに消えていたエラーを記録ファイルに残す（2026-10-02 のTwitch切断の原因が追えなかったため）。
+    ①裏の手（スレッド）で起きた想定外のエラー ②画面の手で起きた想定外のエラー ③sys.stderr への出力"""
+    import sys
+    import traceback
+
+    def _thread_hook(args):
+        if args.exc_type is SystemExit:
+            return
+        name = args.thread.name if args.thread else "?"
+        logging.getLogger("error_capture").error(
+            f"裏の処理（{name}）で想定外のエラー:\n"
+            + "".join(traceback.format_exception(args.exc_type, args.exc_value, args.exc_traceback)).rstrip())
+
+    def _main_hook(exc_type, exc_value, exc_tb):
+        logging.getLogger("error_capture").error(
+            "想定外のエラー:\n" + "".join(traceback.format_exception(exc_type, exc_value, exc_tb)).rstrip())
+
+    threading.excepthook = _thread_hook
+    sys.excepthook = _main_hook
+    if sys.stderr is None or not getattr(sys.stderr, "isatty", lambda: False)():
+        sys.stderr = _StderrToLog()
+
+
 class QueueHandler(logging.Handler):
     def __init__(self, log_queue):
         super().__init__()
@@ -880,6 +926,7 @@ class BotGUI:
             root_logger.addHandler(make_file_log_handler())
         except Exception as e:
             self._append_log(f"記録ファイルを作れませんでした（画面の記録は出ます）: {e}", "WARNING")
+        install_error_capture()
         root_logger.setLevel(logging.INFO)
 
         self.bot_thread = threading.Thread(target=self._run_bot, daemon=True)
