@@ -151,7 +151,7 @@ class LaneManager:
             msg = "了解、VCはもう聞かないね"
         self._send_priority(msg)
 
-    VC_NAME_VARIANTS = ("太郎", "たろう", "タロウ", "太朗")  # Whisperの書き方の揺れ
+    VC_NAME_VARIANTS = ("太郎", "たろう", "タロウ", "太朗", "タロー", "たろー")  # Whisperの書き方の揺れ
     # v4.59: 太郎が反応しなかったときに言われがちな言葉（VCからでもマイクからでも合図になる）
     VC_NUDGE_WORDS = ("返事して", "返事ない", "返事しない", "返事くれ", "返事は", "答えて",
                       "無視", "反応ない", "反応しない", "シカト")
@@ -188,13 +188,19 @@ class LaneManager:
         now = time.time()
         called = ai_name in text or any(v in text for v in self.VC_NAME_VARIANTS)
         nudged = any(w in text for w in self.VC_NUDGE_WORDS)
-        max_turns = getattr(self.config, 'VC_CONVERSATION_MAX_TURNS', 3)
+        max_turns = getattr(self.config, 'VC_CONVERSATION_MAX_TURNS', 1)
         in_conv = (now < self._vc_conv_until and self._vc_conv_turns < max_turns)
         if called or nudged:
             self._reply_vc(text, from_vc=True, fresh=not in_conv)
         elif in_conv:
             logger.info(f"[VC会話モード] 続きの発言として返事: {text[:30]}")
             self._reply_vc(text, from_vc=True, fresh=False, lookback=False)
+
+    def _vc_really_called(self, heard: str) -> bool:
+        """聞き直した文に、太郎の名前か合図の言葉（返事して等）があるか"""
+        ai_name = getattr(self.config, 'AI_NAME', '太郎')
+        return (ai_name in heard or any(v in heard for v in self.VC_NAME_VARIANTS)
+                or any(w in heard for w in self.VC_NUDGE_WORDS))
 
     def _reply_vc(self, trigger: str, from_vc: bool, fresh: bool = True, lookback: bool = True):
         """直近のVCをさかのぼって聞き直し、流れを踏まえて返事する"""
@@ -213,6 +219,14 @@ class LaneManager:
                 logger.info(f"[VCさかのぼり] {heard[:60]}")
             except Exception as e:
                 logger.warning(f"[VCさかのぼり] 失敗: {e}")
+        # v4.59: ふだんのVCの聞き取り（軽いWhisper）は「あおちゃん」「回復ある?」等を「太郎」と聞き間違える
+        # （2026-10-06 配信で5回以上、呼ばれていないのに返事した）。精度の高い聞き直しの結果に
+        # 太郎の名前も合図の言葉も無ければ、聞き間違いとみなして返事しない
+        if (from_vc and heard and getattr(self.config, 'VC_VERIFY_CALL', True)
+                and not self._vc_really_called(heard)):
+            logger.info(f"[VC] 聞き直したら呼ばれていなかったので返事しません"
+                        f"（最初の聞き取り: {trigger[:30]} ／ 聞き直し: {heard[-40:]}）")
+            return
         if not heard:
             heard = "／".join(self._vc_memo)
         sec = getattr(self.config, 'VC_LOOKBACK_SECONDS', 30)
@@ -228,10 +242,11 @@ class LaneManager:
         if comment:
             self._last_vc_reply = now
             self._vc_conv_turns += 1
-            max_turns = getattr(self.config, 'VC_CONVERSATION_MAX_TURNS', 3)
+            max_turns = getattr(self.config, 'VC_CONVERSATION_MAX_TURNS', 1)
             if self._vc_conv_turns >= max_turns:
                 self._vc_conv_until = 0.0
-                logger.info(f"[VC会話モード] {max_turns}往復で一区切り")
+                if max_turns > 1:
+                    logger.info(f"[VC会話モード] {max_turns}往復で一区切り")
             else:
                 self._vc_conv_until = time.time() + getattr(self.config, 'VC_CONVERSATION_WINDOW', 20)
             logger.info(f"[VC呼びかけ反応] {trigger} → {comment}")

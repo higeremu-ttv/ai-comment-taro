@@ -1651,6 +1651,7 @@ check("VC: 普通の発言は捨てない", not vcl.looks_like_hallucination("�
 
 # 頭脳（lane_manager）側
 cfg_vc = FakeConfig()
+cfg_vc.VC_CONVERSATION_MAX_TURNS = 3  # 会話モード（3往復）の動きを確かめるため。既定は1
 gen_vc = CommentGenerator(cfg_vc)
 _vc_prompts = []
 gen_vc._call_gemini = lambda p, **kw: _vc_prompts.append(p) or "え、俺のこと呼んだ？見てたよ！"
@@ -1760,6 +1761,40 @@ _pm_obj.add_glossary_term("ナゾ", "")
 _pm_obj.add_glossary_term("ビクロイ", "ゲーム内での勝利のこと")
 check("手帳: 意味があいまいな語・説明のない語は覚えず、はっきりした語だけ覚える",
       list(_pm_obj._profile["glossary"].keys()) == ["ビクロイ"])
+
+# v4.59 VC: 返事は1回だけ（既定）／聞き直して呼ばれていなければ返事しない
+cfg_v1 = FakeConfig()
+gen_v1 = CommentGenerator(cfg_v1)
+gen_v1._call_gemini = lambda p, **kw: "呼んだ？"
+tw_v1 = FakeTwitch()
+lanes_v1 = LaneManager(cfg_v1, gen_v1, tw_v1, FakeAudio())
+lanes_v1.on_vc_speech("太郎、こんばんは")
+lanes_v1.on_vc_speech("じゃあ次どこ行く？")
+lanes_v1.on_vc_speech("そっちにしよう")
+check("VC: 既定では呼ばれたときに1回だけ返事する（続きの発言には返さない）", len(tw_v1.sent) == 1)
+
+_heard_v = ["あおちゃん、これ吸血なんとかのはずなんだけど、回復しないんですけど"]
+lanes_v1.set_vc_lookback(lambda: _heard_v[0], lambda: True)
+lanes_v1._last_vc_reply -= 60
+lanes_v1.on_vc_speech("太郎ちゃん、これ吸血なんとかのはずなんだけど、回復しないんですけど")
+check("VC: 聞き直したら「太郎」と言っていなければ返事しない（聞き間違い）", len(tw_v1.sent) == 1)
+_heard_v[0] = "チョップチョップタロウがマシンガンぶっぱなす"
+lanes_v1.on_vc_speech("太郎がマシンカンブっぱなす。")
+check("VC: 聞き直しでも呼ばれていれば返事する（タロウ表記でも）", len(tw_v1.sent) == 2)
+_heard_v[0] = "ねえ、返事してくれないじゃん"
+lanes_v1._last_vc_reply -= 60
+lanes_v1.on_vc_speech("太郎返事してくれないじゃん")
+check("VC: 聞き直しに名前が無くても合図の言葉（返事して等）があれば返事する", len(tw_v1.sent) == 3)
+_heard_v[0] = "回復ある?"
+lanes_v1._last_vc_reply -= 60
+lanes_v1._vc_conv_until = 0.0
+_before_v = len(tw_v1.sent)
+lanes_v1.on_speech("VCに返事して")
+check("VC: 配信者のマイクからの合図は、聞き直しに名前が無くても返事する", len(tw_v1.sent) == _before_v + 1)
+_heard_v[0] = ""
+lanes_v1._last_vc_reply -= 60
+lanes_v1.on_vc_speech("太郎、聞こえる？")
+check("VC: 聞き直しが空（聞き直せなかった）なら、今までどおり返事する", len(tw_v1.sent) == _before_v + 2)
 
 # ============================================================
 # v4.59 「黙れ」でしばらく黙る
