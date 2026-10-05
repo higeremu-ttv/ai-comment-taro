@@ -87,6 +87,18 @@ def install_error_capture():
 
     threading.excepthook = _thread_hook
     sys.excepthook = _main_hook
+
+    # ライブラリの「お知らせ」（FutureWarning 等。例: google.generativeai のサポート終了）は故障ではない。
+    # stderr 経由だと1行ずつ ERROR と出て故障に見えた（2026-10-06）ので、WARNING の1件として記録する
+    import warnings
+
+    def _show_warning(message, category, filename, lineno, file=None, line=None):
+        text = " ".join(str(message).split())
+        logging.getLogger("library_notice").warning(
+            f"ライブラリからのお知らせ（故障ではありません）: {category.__name__}: {text}"
+            f" [{os.path.basename(filename)}:{lineno}]")
+
+    warnings.showwarning = _show_warning
     if sys.stderr is None or not getattr(sys.stderr, "isatty", lambda: False)():
         sys.stderr = _StderrToLog()
 
