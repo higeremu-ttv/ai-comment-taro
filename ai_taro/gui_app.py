@@ -471,6 +471,7 @@ class BotGUI:
         self.var_taro_vc_volume = tk.StringVar()       # v4.59
         self.var_gimmick_enabled = tk.BooleanVar()
         self.var_gimmick_words = tk.StringVar()
+        self.var_event_banned_words = tk.StringVar()   # v4.59
         self.var_speech_gimmicks = tk.StringVar()
         self.var_chat_threshold = tk.StringVar()
         self.var_chat_window = tk.StringVar()
@@ -658,6 +659,8 @@ class BotGUI:
             font=("Yu Gothic UI", 10)
         ).pack(side="left")
         make_field(sec4, "参加するギミック単語", self.var_gimmick_words)
+        make_field(sec4, "俳句・謎かけで使わない言葉", self.var_event_banned_words)
+        make_note(sec4, "カンマ区切り。例: 夜霧,月明かり")
         make_note(sec4, "告知にこの単語があると太郎がその単語だけを投稿。例: 行進,ランダム,おなかすいた")
         make_field(sec4, "音声トリガーのギミック", self.var_speech_gimmicks)
         make_note(sec4, "配信者の発言に反応して単語を投稿。書式: 聞いた語=投稿する語。例: ビクロイ=gg")
@@ -755,6 +758,7 @@ class BotGUI:
             self.var_taro_vc_volume.set(str(getattr(cfg, "TARO_VC_VOLUME", 50)))
             self.var_gimmick_enabled.set(getattr(cfg, "GIMMICK_ENABLED", True))
             self.var_gimmick_words.set(getattr(cfg, "GIMMICK_WORDS", "行進,ランダム,おなかすいた"))
+            self.var_event_banned_words.set(getattr(cfg, "EVENT_BANNED_WORDS", ""))
             self.var_speech_gimmicks.set(getattr(cfg, "SPEECH_GIMMICKS", "ビクロイ=gg"))
             self.var_chat_threshold.set(str(getattr(cfg, "CHAT_ACTIVITY_THRESHOLD", "3")))
             self.var_chat_window.set(str(getattr(cfg, "CHAT_ACTIVITY_WINDOW_SECONDS", "60")))
@@ -846,6 +850,8 @@ class BotGUI:
                                     str(self.var_gimmick_enabled.get()), is_string=False)
             content = replace_value(content, "GIMMICK_WORDS",
                                     self.var_gimmick_words.get())
+            content = replace_value(content, "EVENT_BANNED_WORDS",
+                                    self.var_event_banned_words.get().replace('"', '').replace("'", ""))
             content = replace_value(content, "SPEECH_GIMMICKS",
                                     self.var_speech_gimmicks.get())
             content = replace_value(content, "CHAT_ACTIVITY_THRESHOLD",
@@ -1130,9 +1136,22 @@ class BotGUI:
                 result = comment_gen._call_gemini(prompt, smart=False, require_ending=False)
                 return result or ""
 
+            def _banned_event_words():
+                """v4.59: 俳句・謎かけで使わせない言葉（config.EVENT_BANNED_WORDS、カンマ区切り）"""
+                raw = getattr(config, 'EVENT_BANNED_WORDS', '') or ''
+                return [w.strip() for w in raw.replace('、', ',').split(',') if w.strip()]
+
+            def _banned_text():
+                words = _banned_event_words()
+                return f"・次の言葉は絶対に使わないこと（{', '.join(words)}）\n" if words else ""
+
+            def _has_banned(text):
+                return next((w for w in _banned_event_words() if w in text), None)
+
             def _do_haiku_event():
                 """俳句イベント（v4.50: Lite・配信内容と関連付けない省エネ版）"""
                 avoid_text = f"・次の言葉は使わないこと（{', '.join(used_event_words[-15:])}）\n" if used_event_words else ""
+                avoid_text += _banned_text()
                 prompt = (
                     "あなたはTwitchのゲーム配信を見ている常連視聴者「コメント太郎」です。\n"
                     "配信の雰囲気に合う俳句を自由に一句詠んでください。\n"
@@ -1142,6 +1161,16 @@ class BotGUI:
                     "・俳句の本文のみ出力（説明・コメント不要）"
                 )
                 haiku = _call_gemini_lite(prompt)
+                # v4.59: 使わせない言葉が入っていたら作り直す（2回まで）。それでも入っていたら今回は詠まない
+                for _ in range(2):
+                    bad = _has_banned(haiku or "")
+                    if not bad:
+                        break
+                    logger.info(f"[俳句] 使わない言葉「{bad}」が入っていたため作り直します: {haiku}")
+                    haiku = _call_gemini_lite(prompt)
+                if _has_banned(haiku or ""):
+                    logger.info(f"[俳句] 使わない言葉が入ったままのため、今回は詠みません: {haiku}")
+                    return
                 if haiku and self.bot_running:
                     haiku = haiku.replace('\n', '　')
                     # v4.51: 同じ句の連投防止（同日中に投稿済みならスキップ）
@@ -1160,6 +1189,7 @@ class BotGUI:
             def _do_nazokake_event():
                 """謎かけイベント（v4.50: Lite・配信内容と関連付けない省エネ版）"""
                 avoid_text = f"・次の言葉は使わないこと（{', '.join(used_event_words[-15:])}）\n" if used_event_words else ""
+                avoid_text += _banned_text()
                 prompt = (
                     "あなたはTwitchのゲーム配信を見ている常連視聴者「コメント太郎」です。\n"
                     "謎かけを一つ作ってください。面白さ・意外性を最優先にすること。\n"
@@ -1170,6 +1200,9 @@ class BotGUI:
                     "・謎かけ本文のみ出力（説明不要）"
                 )
                 result = _call_gemini_lite(prompt)
+                if _has_banned(result or ""):
+                    logger.info(f"[謎かけ] 使わない言葉が入っていたため、今回は見送ります: {result}")
+                    return
                 if result and '／' in result and self.bot_running:
                     parts = result.strip().split('／', 1)
                     first = parts[0].strip()
