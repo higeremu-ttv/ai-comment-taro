@@ -150,9 +150,17 @@ class ProfileManager:
             self._profile['streamer_status'] = status_list[-MAX_STATUS:]
         logger.info(f"[手帳] 近況を記録: {text[:30]}")
 
+    # 説明にこれが入っていたら「分かっていない」とみなす
+    UNSURE_MARKERS = ("不明", "謎", "？", "?", "思われる", "可能性", "かも", "らしい", "推測", "何か", "なにか")
+
     def add_glossary_term(self, term: str, description: str = ""):
         """固有名詞辞書に語を追加する（v4.20）。Whisperヒントにも自動反映される"""
         if not term or len(term) < 2 or len(term) > 20:
+            return
+        # v4.59: 意味があいまいな語は覚えない。聞き間違いでできた意味不明の語（「ユギ＝特定の状況で発動する能力？」等）で
+        # 手帳が埋まり、太郎がそれを本当の用語として話していた（2026-10-06 配信者の指示で整理）
+        if not description or any(m in description for m in self.UNSURE_MARKERS):
+            logger.info(f"[手帳] 意味があいまいなので覚えません: {term} = {(description or '')[:20]}")
             return
         glossary = self._profile.setdefault('glossary', {})
         if term not in glossary:
@@ -417,15 +425,20 @@ class ProfileManager:
 - topics: 主要な話題のリスト（5〜20文字で簡潔に）
 - viewer_notes: 視聴者について分かったこと。{{"ユーザー名": "一言メモ"}} 形式（例: {{"turbo35gtr": "PS配信派"}}）
 - glossary: 会話に出たゲーム用語・固有名詞。{{"語": "ひとこと説明"}} 形式（一般的な言葉は除く）
+  （意味がはっきり分かる語だけ。推測で説明を書かない。「不明」「〜と思われる」と書くくらいなら入れない。
+  　音声認識の聞き間違いらしい意味の通らないカタカナ語は入れない。
+  　配信者が「そんなこと言ってない」「違う」と否定した語は入れない）
 - corrections: 音声認識の誤変換が訂正された箇所。{{"誤変換された語": "正しい語"}} 形式
   （例: 「5変換じゃなくて誤変換だよ」という発言があれば {{"5変換": "誤変換"}}。
   　訂正の発言が明確にあった場合のみ。推測では入れないこと）
-- jokes: この配信の定番ネタ・お決まりの言い回しのリスト
+- jokes: この配信の定番ネタ・お決まりの言い回しのリスト（配信者や視聴者が何度も言ったものだけ。
+  AIの発言や、1回出ただけの言葉、意味の通らない聞き間違いは入れない）
 - streamer_status: 配信者本人の近況（体調・予定・買い物など）のリスト
 
 会話履歴:
 {history_text}
 
+「AI:」で始まる行はAI自身の発言なので、そこからは何も抽出しないこと。
 JSONのみ出力。分からない項目は空のリスト・空のオブジェクトでよい。"""
 
                 response = model.generate_content(prompt)

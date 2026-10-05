@@ -1749,6 +1749,18 @@ _gui.BotGUI._apply_run_mode(_m, "taro_only")
 check("▶太郎だけ: 今までどおり（読み上げはTTA任せ）", _m.TARO_AI_ENABLED and not _m.READ_ALOUD_ENABLED)
 
 print()
+# v4.59 手帳: 意味があいまいな語は覚えない
+import profile_manager as _pm_u
+_pm_obj = _pm_u.ProfileManager.__new__(_pm_u.ProfileManager)
+_pm_obj._profile = {"glossary": {}}
+_pm_obj.add_glossary_term("ユギ", "特定の状況で発動する能力？")
+_pm_obj.add_glossary_term("チモク", "不明")
+_pm_obj.add_glossary_term("オーロン", "ゲーム内のキャラクター名かアイテム名と思われる。")
+_pm_obj.add_glossary_term("ナゾ", "")
+_pm_obj.add_glossary_term("ビクロイ", "ゲーム内での勝利のこと")
+check("手帳: 意味があいまいな語・説明のない語は覚えず、はっきりした語だけ覚える",
+      list(_pm_obj._profile["glossary"].keys()) == ["ビクロイ"])
+
 # ============================================================
 # v4.59 「黙れ」でしばらく黙る
 # ============================================================
