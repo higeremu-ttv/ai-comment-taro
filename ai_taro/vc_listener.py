@@ -42,6 +42,39 @@ def looks_like_hallucination(text: str) -> bool:
     return re.search(r"(.{1,3})\1{4,}", text) is not None
 
 
+# Whisperが無音・雑音から作りがちな決まり文句（動画の締めのあいさつ等）。VCの発言として扱わない
+STOCK_HALLUCINATIONS = ("ご視聴ありがとうございました", "最後までご視聴ありがとうございました",
+                        "ご覧いただきありがとうございます", "チャンネル登録お願いします",
+                        "次の動画でお会いしましょう")
+
+
+def _plain(text: str) -> str:
+    import re
+    return re.sub(r"[\s　、。,.!！?？「」…・]", "", text)
+
+
+def is_prompt_echo(text: str, prompt: str) -> bool:
+    """v4.59: Whisperに渡したヒント文（VC_WHISPER_PROMPT）が、そのまま聞き取り結果として出てきたものか。
+    例:「ゲームのボイスチャットの会話。」「無視、フォートナイト」（2026-10-06 配信で発生。
+    後者は合図の言葉「無視」を含むため、誰も呼んでいないのに太郎が返事をした）。
+    ヒント文の中に続けて書いてある部分（かけら2つ以上）がそのまま出たときだけ捨てる"""
+    import re
+    t = _plain(text)
+    whole = _plain(prompt)
+    if not t or not whole or t not in whole:
+        return False
+    pieces = [p for p in (_plain(x) for x in re.split(r"[、。,.]", prompt)) if p]
+    if t in pieces:
+        # かけら1つだけ（「返事してくれない」「ナイス」等）は本当の発言でも出る。長い説明文のかけらだけ捨てる
+        return len(t) >= 9
+    return sum(1 for piece in pieces if piece in t) >= 2
+
+
+def is_stock_hallucination(text: str) -> bool:
+    t = _plain(text)
+    return any(t == _plain(s) for s in STOCK_HALLUCINATIONS)
+
+
 class com_for_this_thread:
     """v4.59: この手（スレッド）でWindowsの音の準備（COM）をする。
     SoundCard は最初に読み込んだ手でしか準備しないため、別の手で録音・再生すると
@@ -250,6 +283,9 @@ class VCListener:
                 continue
             if looks_like_hallucination(text):
                 logger.info(f"[VC] 聞き間違いらしい繰り返しのため捨てました: {text[:20]}…")
+                continue
+            if is_prompt_echo(text, getattr(self.config, 'VC_WHISPER_PROMPT', '')) or is_stock_hallucination(text):
+                logger.info(f"[VC] 聞き取りの決まり文句（実際の発言ではない）のため捨てました: {text[:30]}")
                 continue
             try:
                 self._on_text(text)

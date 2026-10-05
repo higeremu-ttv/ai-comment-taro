@@ -111,6 +111,11 @@ class AudioModule:
 
         return True, ""
 
+    def _has_quiet_word(self, text: str) -> bool:
+        """v4.59: 太郎を黙らせる言葉（config.QUIET_WORDS）が入っているか"""
+        raw = getattr(self.config, 'QUIET_WORDS', '黙れ,だまれ') if getattr(self, 'config', None) else '黙れ,だまれ'
+        return any(w.strip() and w.strip() in text for w in (raw or '').replace('、', ',').split(','))
+
     def _emit_speech(self, text: str):
         logger.info(f"音声認識結果: {text}")
         self._speech_context.append(text)
@@ -417,7 +422,10 @@ class AudioModule:
                     if text:
                         text = text.strip()
                         text = self._apply_corrections(text)  # v4.43: 誤変換の自動補正
-                        if len(text) < self._min_length:
+                        if self._has_quiet_word(text):
+                            # v4.59: 「黙れ」は2文字で、繰り返しても言われる。文字数や繰り返しのフィルターで落とさない
+                            self._emit_speech(text)
+                        elif len(text) < self._min_length:
                             logger.info(f"[フィルター] スキップ: '{text}' ({len(text)}文字)")
                         else:
                             self._process_speech_text(text)

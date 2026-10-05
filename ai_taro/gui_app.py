@@ -1250,6 +1250,7 @@ class BotGUI:
                 # イベントタイマーチェック
                 now = time.time()
                 if (getattr(config, 'EVENTS_ENABLED', True)
+                        and not lanes.is_quiet()  # v4.59: 「黙れ」の間は俳句・謎かけも待つ
                         and now - last_event_time[0] >= next_event_interval):
                     try:
                         event_func = random.choice(event_list)

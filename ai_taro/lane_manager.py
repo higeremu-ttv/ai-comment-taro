@@ -86,6 +86,7 @@ class LaneManager:
         self._vc_toggle = None           # 切り替え関数 on(bool)->成功したか（gui_appから設定）
         self._vc_talk_toggle = None      # v4.59: 太郎の声をVCに流すかの切り替え関数（gui_appから設定）
         self._last_vc_reply = 0.0
+        self._quiet_until = 0.0          # v4.59: 「黙れ」と言われたら、この時刻まで投稿しない
         self._vc_conv_until = 0.0        # v4.59: VCの会話モード（呼ばれて返事した後しばらくは名前なしでも返事）
         self._vc_conv_turns = 0
 
@@ -181,6 +182,8 @@ class LaneManager:
         返事の直後の会話モード中だけ返事する。それ以外は一時メモに置くだけ（割り込まない）"""
         logger.info(f"[VC] {text}")
         self._vc_memo.append(text)
+        if self.is_quiet():  # v4.59: 黙っている間はVCにも返事しない（返事を作る費用もかけない）
+            return
         ai_name = getattr(self.config, 'AI_NAME', '太郎')
         now = time.time()
         called = ai_name in text or any(v in text for v in self.VC_NAME_VARIANTS)
@@ -248,14 +251,48 @@ class LaneManager:
             except Exception:
                 pass
 
+    # ============================================================
+    # v4.59: 「黙れ」と言われたらしばらく黙る
+    # ============================================================
+    def _quiet_words(self):
+        raw = getattr(self.config, 'QUIET_WORDS', '黙れ,だまれ') or ''
+        return [w.strip() for w in raw.replace('、', ',').split(',') if w.strip()]
+
+    def is_quiet(self) -> bool:
+        """今は黙っている時間か（俳句・謎かけのイベント側からも見る）"""
+        return time.time() < self._quiet_until
+
+    def _start_quiet(self, text: str):
+        seconds = getattr(self.config, 'QUIET_SECONDS', 180)
+        self._quiet_until = time.time() + seconds
+        # 黙る前の話題を、黙り明けに蒸し返さない
+        self._conversation_until = 0.0
+        self._vc_conv_until = 0.0
+        try:
+            with self._memo_lock:
+                self._context_memo.clear()
+        except Exception:
+            pass
+        logger.info(f"[お口チャック] 「{text[:20]}」→ {seconds}秒黙ります（「太郎」と呼べばすぐ戻ります）")
+
+    def _blocked_by_quiet(self, comment: str) -> bool:
+        if not self.is_quiet():
+            return False
+        logger.info(f"[お口チャック] 黙っている時間のため投稿しません: {comment[:30]}")
+        return True
+
     def _send_priority(self, comment: str):
         """即時レーン: 優先キューで送信（送信待ちの列に並ばない）"""
+        if self._blocked_by_quiet(comment):
+            return
         self.twitch.send_comment_priority(comment)
         self._last_comment_time = time.time()
         self._notify_comment(comment)
 
     def _send_normal(self, comment: str):
         """文脈レーン: 通常キューで送信"""
+        if self._blocked_by_quiet(comment):
+            return
         self.twitch.send_comment(comment)
         self._last_comment_time = time.time()
         self._notify_comment(comment)
@@ -356,6 +393,16 @@ class LaneManager:
 
     def on_speech(self, text: str):
         """音声認識結果を受け取り、レーンに振り分ける"""
+        # v4.59: 「黙れ」→ しばらく黙る。黙っている間は、名前を呼ばれたときだけ戻る
+        if any(w in text for w in self._quiet_words()):
+            self._start_quiet(text)
+            return
+        if self.is_quiet():
+            if self._detect_direct_call(text)[0]:
+                logger.info("[お口チャック] 呼ばれたので、黙るのをやめます")
+                self._quiet_until = 0.0
+            else:
+                return
         # v4.59: 「VCに返事して」「返事してくれない」等（VCを聞いているときだけ）
         if self.is_mic_vc_nudge(text):
             logger.info(f"[VC] 配信者からの合図: {text[:30]}")
@@ -785,6 +832,8 @@ confirmには「覚えたよ！」で始めて、何をどう覚えたかを具�
 
     def on_silence(self):
         """無言が続いたときの話しかけ（文脈レーンの仲間）"""
+        if self.is_quiet():
+            return
         if not self._cooldown_ok():
             return
         if self._chat_is_busy():
@@ -806,6 +855,8 @@ confirmには「覚えたよ！」で始めて、何をどう覚えたかを具�
         """メインループから毎秒呼ばれる。会話の切れ目を検知して
         文脈メモからコメントを生成する。"""
         now = time.time()
+        if self.is_quiet():  # v4.59: 黙っている間はコメントを作らない
+            return
 
         # v4.50: 取材の回答待ちタイムアウト（静かに引っ込める）
         if self._interview and now > self._interview['until']:

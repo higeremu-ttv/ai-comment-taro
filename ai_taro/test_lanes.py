@@ -1749,6 +1749,49 @@ _gui.BotGUI._apply_run_mode(_m, "taro_only")
 check("▶太郎だけ: 今までどおり（読み上げはTTA任せ）", _m.TARO_AI_ENABLED and not _m.READ_ALOUD_ENABLED)
 
 print()
+# ============================================================
+# v4.59 「黙れ」でしばらく黙る
+# ============================================================
+cfg_q = FakeConfig()
+cfg_q.QUIET_WORDS = "黙れ,だまれ"
+cfg_q.QUIET_SECONDS = 180
+gen_q = CommentGenerator(cfg_q)
+gen_q._call_gemini = lambda p, **kw: "はいよ！"
+tw_q = FakeTwitch()
+lanes_q = LaneManager(cfg_q, gen_q, tw_q, FakeAudio())
+check("黙れ: ふだんは黙っていない", lanes_q.is_quiet() is False)
+lanes_q.on_speech("黙れ黙れ黙れ")
+check("黙れ: 言われたら黙る（返事もしない）", lanes_q.is_quiet() is True and tw_q.sent == [])
+lanes_q._send_normal("文脈のコメント")
+lanes_q._send_priority("名指しへの返事")
+check("黙れ: 黙っている間は投稿しない", tw_q.sent == [])
+lanes_q.on_vc_speech("太郎、返事して")
+lanes_q.on_speech("今日は調子がいいですね、どんどん行きましょう")
+check("黙れ: 黙っている間はVCの呼びかけにも普通の発言にも反応しない", tw_q.sent == [])
+lanes_q.on_speech("太郎、もう喋っていいよ")
+check("黙れ: 「太郎」と呼べばすぐ戻って返事する", lanes_q.is_quiet() is False and len(tw_q.sent) == 1)
+lanes_q.on_speech("だまれ")
+lanes_q._quiet_until = time.time() - 1
+check("黙れ: 時間が過ぎたら元に戻る", lanes_q.is_quiet() is False)
+lanes_q._send_normal("戻ったあとのコメント")
+check("黙れ: 戻ったら投稿できる", tw_q.sent[-1][0] == "戻ったあとのコメント")
+
+import audio_module as _am_q
+_emitted_q = []
+_a_q = _am_q.AudioModule.__new__(_am_q.AudioModule)
+_a_q.config = cfg_q
+check("黙れ: 2文字でも聞き取りのフィルターを通す", _a_q._has_quiet_word("黙れ") and not _a_q._has_quiet_word("よし"))
+
+# v4.59 VC: ヒント文がそのまま出てきたものと、決まり文句を捨てる
+_vp = "ゲームのボイスチャットの会話。太郎、返事して、返事してくれない、無視、フォートナイト、ナイス、などの言葉が出ます。"
+check("VC: ヒント文の先頭がそのまま出たら捨てる", vcl.is_prompt_echo("ゲームのボイスチャットの会話。", _vp))
+check("VC: ヒント文のかけらをつないだだけなら捨てる", vcl.is_prompt_echo("無視、フォートナイト", _vp))
+check("VC: 本当の発言は捨てない（返事して）", not vcl.is_prompt_echo("ねえ、太郎返事してくれないじゃん", _vp))
+check("VC: 本当の発言は捨てない（ナイス）", not vcl.is_prompt_echo("ナイス。", _vp))
+check("VC: 本当の発言は捨てない（太郎）", not vcl.is_prompt_echo("太郎、こんばんは。", _vp))
+check("VC: 「ご視聴ありがとうございました」は捨てる", vcl.is_stock_hallucination("ご視聴ありがとうございました。"))
+check("VC: 似ていても普通の発言は捨てない", not vcl.is_stock_hallucination("ご視聴ありがとうございましたって言われたよ"))
+
 ok = sum(1 for _, c in results if c)
 print(f"===== 結果: {ok}/{len(results)} 件成功 =====")
 sys.exit(0 if ok == len(results) else 1)

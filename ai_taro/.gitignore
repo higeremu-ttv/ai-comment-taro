@@ -28,6 +28,7 @@ env/
 
 # 学習済みプロフィール（個人情報を含む）
 learned_profile.json
+learned_profile.backup_*.json
 
 # 読み上げ辞書の実データ（v4.57・視聴者名などを含みうるためgitignore。配布版には見本だけ同梱）
 reading_dictionary.json
