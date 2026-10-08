@@ -124,11 +124,29 @@ class TwitchModule:
         announcers = {a.strip().lower() for a in raw.split(',') if a.strip()}
         if username.lower() not in announcers:
             return None
+        # v4.59: 告知の本文を記録に残す（「おなかすいた」に一度も反応していなかったが、
+        # 告知の実際の書き方が記録に無く原因を追えなかったため）
+        logger.info(f"[告知] {username}: {content[:120]}")
+        norm = self._gimmick_normalize(content)
         words = getattr(self.config, 'GIMMICK_WORDS', '')
         for word in (w.strip() for w in words.split(',')):
-            if word and word in content:
+            if word and (word in content or self._gimmick_normalize(word) in norm):
+                return word
+        # 別の書き方（「お腹空いた=おなかすいた」）
+        for pair in (getattr(self.config, 'GIMMICK_ALIASES', '') or '').split(','):
+            if '=' not in pair:
+                continue
+            alias, word = (x.strip() for x in pair.split('=', 1))
+            if alias and word and self._gimmick_normalize(alias) in norm:
                 return word
         return None
+
+    @staticmethod
+    def _gimmick_normalize(text: str) -> str:
+        """空白・記号を取り、カタカナをひらがなにそろえる（「おなか すいた！」「オナカスイタ」も拾うため）"""
+        import re
+        t = re.sub(r"[\s　、。,.!！?？「」『』\"'・…ー〜~]", "", text or "")
+        return "".join(chr(ord(c) - 0x60) if "ァ" <= c <= "ヶ" else c for c in t).lower()
 
     def schedule_gimmick(self, word: str):
         """ギミック単語の投稿を予約する（すぐ打つと機械的に見えるため間を置く）"""

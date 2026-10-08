@@ -1796,6 +1796,51 @@ lanes_v1._last_vc_reply -= 60
 lanes_v1.on_vc_speech("太郎、聞こえる？")
 check("VC: 聞き直しが空（聞き直せなかった）なら、今までどおり返事する", len(tw_v1.sent) == _before_v + 2)
 
+# v4.59 同じ言い回し（流行語・口ぐせ）の連発を避ける
+gen_ph = CommentGenerator(FakeConfig())
+_ph_prompts = []
+_ph_answers = ["まさかそこで落ちるとは思わなかった、草。", "それは草生えるわ、ナイスすぎる。", "流行語なしで素直にびっくりしたよ。"]
+
+
+def _ph_inner(prompt, smart=False, require_ending=True):
+    _ph_prompts.append(prompt)
+    return _ph_answers[min(len(_ph_prompts) - 1, len(_ph_answers) - 1)]
+
+
+gen_ph._call_gemini_inner = _ph_inner
+_r1 = gen_ph._call_gemini("最初のお題")
+check("言い回し: 最初のコメントには注意書きを付けない", "言い回しの注意" not in _ph_prompts[0] and _r1.endswith("草。"))
+_r2 = gen_ph._call_gemini("次のお題")
+check("言い回し: 直前に使った流行語は「今回は使わない」と指示に添える",
+      "言い回しの注意" in _ph_prompts[1] and "草" in _ph_prompts[1])
+check("言い回し: それでも同じ流行語が続いたら1回だけ作り直す",
+      len(_ph_prompts) == 3 and "絶対に使わない" in _ph_prompts[2] and _r2 == "流行語なしで素直にびっくりしたよ。")
+gen_ph._recent_outputs = ["「あれ」って、何だろう気になるな。", "それ気になるじゃん、なんかいいね。"]
+check("言い回し: 口ぐせ（2回続いた「気になる」）と引用の書き出しも避けさせる",
+      "気になる" in gen_ph._phrasing_note() and "引用で始めない" in gen_ph._phrasing_note())
+_ph_prompts.clear()
+gen_ph._call_gemini("俳句のお題", require_ending=False)
+check("言い回し: 俳句・謎かけには注意書きを付けない", _ph_prompts == ["俳句のお題"])
+check("言い回し: 指示文は「毎回ちがう言い方」「例に無い言い方も使う」と求める",
+      "毎回ちがう言い方" in gen_ph.SYSTEM_PROMPT_TEMPLATE and "ここに無い言い方" in gen_ph.SYSTEM_PROMPT_TEMPLATE
+      and "ま？" in gen_ph.SYSTEM_PROMPT_TEMPLATE)
+
+# v4.59 ギミック: 告知の書き方が違っても拾う
+class _GmCfg(FakeConfig):
+    GIMMICK_ENABLED = True
+    GIMMICK_WORDS = "行進,ランダム,おなかすいた"
+    GIMMICK_ANNOUNCER_ACCOUNTS = "nightbot"
+    GIMMICK_ALIASES = "お腹すいた=おなかすいた,お腹空いた=おなかすいた"
+
+
+_tm_gm = TwitchModule(_GmCfg())
+check("ギミック: そのままの書き方で拾う", _tm_gm.check_gimmick("Nightbot", "あおちゃんが「おなかすいた」と言っています") == "おなかすいた")
+check("ギミック: 空白や記号が入っていても拾う", _tm_gm.check_gimmick("nightbot", "おなか すいた！と打ってみてね") == "おなかすいた")
+check("ギミック: カタカナでも拾う", _tm_gm.check_gimmick("nightbot", "オナカスイタ でエサやり") == "おなかすいた")
+check("ギミック: 漢字の書き方（お腹空いた）でも拾う", _tm_gm.check_gimmick("nightbot", "あおちゃんお腹空いた") == "おなかすいた")
+check("ギミック: 告知ボット以外の発言では動かない", _tm_gm.check_gimmick("viewer1", "おなかすいた") is None)
+check("ギミック: 関係ない告知では動かない", _tm_gm.check_gimmick("nightbot", "フォローありがとう！") is None)
+
 # v4.59 謎かけは2時間に1回、それ以外は俳句
 import gui_app as _gui_ev
 check("イベント: 謎かけから2時間たつまでは俳句", _gui_ev.pick_event_kind(1000 + 119 * 60, 1000, 120) == "haiku")

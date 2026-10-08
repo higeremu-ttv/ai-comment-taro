@@ -55,7 +55,15 @@ class CommentGenerator:
 あなたは多面的な性格を持っています。以下のモードが自然に混在します：
 - 真面目モード：ゲームの状況や話題に的確にコメントする
 - オヤジモード：会話の流れでダジャレ・オヤジギャグを自然に挟む
-- 流行語モード：「それな」「草」「エモい」「神ってる」「わかりみ」などを自然に使う
+- 若者モード：20代前半の視聴者がふだんチャットに打つような、力の抜けた話し言葉。
+  流行語だけでなく、若者のくだけた言い方を幅広く使ってよい。たとえば
+  ・短い驚きや相づち（「ま？」「え待って」「それはそう」「たしかに」「あーね」）
+  ・強調（「えぐい」「強すぎ」「〜すぎん？」「ガチで」「ふつうに」）
+  ・語尾（「〜なんよ」「〜なんだが」「〜しか勝たん」「知らんけど」「〜説ある」）
+  ・ネット用語（「草」「それな」「わかりみ」「エモい」「神」「ワンチャン」）
+  これらはあくまで例。ここに無い言い方も自分で考えて使うこと。
+  大事なのは「毎回ちがう言い方」をすること。同じ語・同じ型を口ぐせにしない。続けて使わない。
+  若者言葉を入れないコメントも半分くらい混ぜる（毎回入れると不自然）。無理に若ぶらないこと
 これらは切り替えるのではなく、一つの会話の中に自然に混在させること。
 
 【オヤジギャグについて】
@@ -130,6 +138,7 @@ class CommentGenerator:
         self.config = config
         self._last_comment_time = 0.0
         self._last_comments = []
+        self._recent_outputs = []  # v4.59: 直近の出力（チャット・VC返事すべて）。同じ言い回しの連発を避けるため
         self._conversation_history = []
         self._gemini_models = {}  # v4.30: モデル名→初期化済みモデルのキャッシュ
         self.is_generating = False
@@ -309,6 +318,67 @@ class CommentGenerator:
                句点で終わらないのが正しい出力のため）
         どの経路でも失敗時は相槌用のGemini Liteに退避するので、コメントは止まらない。
         """
+        # v4.59: 同じ言い回しの連発を避ける（俳句・謎かけ＝require_ending=False は対象外）
+        if require_ending:
+            base_prompt = prompt
+            result = self._call_gemini_inner(base_prompt + self._phrasing_note(), smart, require_ending)
+            repeated = self._repeated_slang(result) if result else []
+            if repeated:
+                logger.info(f"[言い回し] 「{'」「'.join(repeated)}」が続いたので作り直します: {result[:30]}")
+                retry = self._call_gemini_inner(
+                    base_prompt + self._phrasing_note()
+                    + f"\n※今回は「{'」「'.join(repeated)}」を絶対に使わないこと。流行語なしの素直な言い方で書くこと。",
+                    smart, require_ending)
+                if retry:
+                    result = retry
+            if result:
+                self._recent_outputs.append(result)
+                del self._recent_outputs[:-8]
+            return result
+        return self._call_gemini_inner(prompt, smart, require_ending)
+
+    # 口ぐせになりやすい流行語・ネット用語（続けて使わせない）
+    SLANG_WORDS = ("草", "わかりみ", "それな", "エモい", "エモ", "神ってる", "神対応", "神", "マジ", "まじ", "ヤバ", "やば",
+                   "ガチ", "爆上がり", "無理ゲー", "ワンチャン", "尊い", "しか勝たん", "ぴえん", "あーね", "りょ",
+                   "ま？", "え待って", "それはそう", "えぐい", "すぎん", "なんよ", "なんだが", "知らんけど", "説ある",
+                   "ふつうに", "普通に")
+    # 流行語ではないが、続くと単調に聞こえる言い回し
+    HABIT_PHRASES = ("気になる", "楽しみ", "なんか", "じゃん", "かな？", "だね！", "ワクワク", "新しい",
+                     "って、", "のかな", "〜", "（笑）", "さすが", "いいね")
+
+    def _phrases_in(self, text: str, words) -> list:
+        found = []
+        for w in words:
+            if w in text and not any(w in f for f in found):  # 「神ってる」があれば「神」は重ねて数えない
+                found.append(w)
+        return found
+
+    def _phrasing_note(self) -> str:
+        """直近のコメントで使った言い回しを「今回は使わない」として添える"""
+        recent = self._recent_outputs[-5:]
+        if not recent:
+            return ""
+        avoid = []
+        for w in self.SLANG_WORDS:          # 流行語: 直近3回で1度でも使ったら避ける
+            if any(w in c for c in recent[-3:]) and not any(w in a for a in avoid):
+                avoid.append(w)
+        for w in self.HABIT_PHRASES:        # 口ぐせ: 直近5回で2度以上使ったら避ける
+            if sum(1 for c in recent if w in c) >= 2:
+                avoid.append(w)
+        note = ""
+        if avoid:
+            note += f"\n\n【言い回しの注意】直近のコメントで使ったので、今回は次の言い回しを使わないこと: {'、'.join(avoid)}"
+        if sum(1 for c in recent[-3:] if c.startswith("「")) >= 1:
+            note += "\n相手の言葉を「」で引用して始める書き出しが続いているので、今回は引用で始めないこと。"
+        return note
+
+    def _repeated_slang(self, comment: str) -> list:
+        """今回のコメントに、直近3回のコメントでも使った流行語が入っていれば、その語を返す"""
+        recent = self._recent_outputs[-3:]
+        return [w for w in self._phrases_in(comment, self.SLANG_WORDS) if any(w in c for c in recent)]
+
+    def _call_gemini_inner(self, prompt: str, smart: bool = False,
+                           require_ending: bool = True) -> Optional[str]:
         lite_model = getattr(self.config, 'GEMINI_MODEL', 'gemini-2.5-flash-lite')
         smart_model = getattr(self.config, 'GEMINI_MODEL_SMART', '') or lite_model
 
