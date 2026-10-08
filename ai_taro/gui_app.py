@@ -45,6 +45,15 @@ def make_file_log_handler(base_dir: str = ""):
     return handler
 
 
+def pick_event_kind(now: float, last_nazokake_time: float, nazokake_interval_minutes: float) -> str:
+    """v4.59: 次のイベントを俳句にするか謎かけにするか。
+    謎かけは前回（起動時を含む）から nazokake_interval_minutes 分たっていたら1回、それ以外は俳句。
+    0以下なら謎かけはしない（配信者の指示「謎かけは2時間に1回くらいでいい」2026-10-08）"""
+    if nazokake_interval_minutes and nazokake_interval_minutes > 0             and now - last_nazokake_time >= nazokake_interval_minutes * 60:
+        return "nazokake"
+    return "haiku"
+
+
 class _StderrToLog:
     """v4.59: 画面だけで動かすとき（pythonw）は sys.stderr が無く、ライブラリが直接出すエラー表示
     （twitchio の内部エラー等）がどこにも残らなかった。記録（logger）へ流す"""
@@ -1222,8 +1231,8 @@ class BotGUI:
                         words = [w for w in all_text.replace('、', ' ').replace('。', ' ').split() if len(w) >= 2]
                         used_event_words.extend(words)
 
-            # イベントリスト（今後追加しやすい構造）
-            event_list = [_do_haiku_event, _do_nazokake_event]
+            # v4.59: 謎かけは NAZOKAKE_INTERVAL_MINUTES（既定120分）に1回。それ以外の回は俳句
+            last_nazokake_time = [time.time()]
 
             # v4.20: 手帳の途中保存タイマー（クラッシュしても学習が消えない保険）
             autosave_interval = getattr(config, 'PROFILE_AUTOSAVE_SECONDS', 600)
@@ -1253,8 +1262,13 @@ class BotGUI:
                         and not lanes.is_quiet()  # v4.59: 「黙れ」の間は俳句・謎かけも待つ
                         and now - last_event_time[0] >= next_event_interval):
                     try:
-                        event_func = random.choice(event_list)
-                        event_func()
+                        kind = pick_event_kind(now, last_nazokake_time[0],
+                                               getattr(config, 'NAZOKAKE_INTERVAL_MINUTES', 120))
+                        if kind == "nazokake":
+                            last_nazokake_time[0] = now
+                            _do_nazokake_event()
+                        else:
+                            _do_haiku_event()
                     except Exception as e:
                         logger.warning(f"[イベント] 生成失敗: {e}")
 
