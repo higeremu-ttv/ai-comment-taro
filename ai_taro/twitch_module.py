@@ -123,6 +123,12 @@ class TwitchModule:
         raw = getattr(self.config, 'GIMMICK_ANNOUNCER_ACCOUNTS', 'nightbot')
         announcers = {a.strip().lower() for a in raw.split(',') if a.strip()}
         if username.lower() not in announcers:
+            # v4.59: 告知ボット以外が登録単語を書いたら、誰が書いたかだけ記録する（投稿はしない）。
+            # 「おなかすいた」の告知が nightbot 以外から出ている可能性を確かめるため
+            words_ = [w.strip() for w in (getattr(self.config, 'GIMMICK_WORDS', '') or '').split(',') if w.strip()]
+            hit = next((w for w in words_ if w in content), None)
+            if hit:
+                logger.info(f"[ギミック候補] {username} が「{hit}」を含む発言（告知ボットではないので投稿しません）: {content[:80]}")
             return None
         # v4.59: 告知の本文を記録に残す（「おなかすいた」に一度も反応していなかったが、
         # 告知の実際の書き方が記録に無く原因を追えなかったため）
