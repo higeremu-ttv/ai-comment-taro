@@ -139,7 +139,8 @@ TOPIC_END_KEYWORDS = "そうね,うん,なるほど,そっか,そうか,確か�
 # ============================================================
 # v4.10: COMMENT_COOLDOWN_SECONDS は「文脈レーンの最低コメント間隔」の意味に
 # なりました。呼びかけ・視聴者コマンドなどの即時レーンはこの間隔を無視します。
-COMMENT_COOLDOWN_SECONDS = 45
+# 2026-10-24 配信者「発言回数が多すぎる」→ 45→90秒（10/20配信は文脈コメントの間隔の中央値61秒・1時間に約65件）
+COMMENT_COOLDOWN_SECONDS = 90
 COMMENT_RETRY_COUNT = 0
 COMMENT_RETRY_INTERVAL = 5
 SILENCE_COMMENT_THRESHOLD = 120
