@@ -1890,6 +1890,19 @@ check("VC: 本当の発言は捨てない（太郎）", not vcl.is_prompt_echo("
 check("VC: 「ご視聴ありがとうございました」は捨てる", vcl.is_stock_hallucination("ご視聴ありがとうございました。"))
 check("VC: 似ていても普通の発言は捨てない", not vcl.is_stock_hallucination("ご視聴ありがとうございましたって言われたよ"))
 
+# v4.60 方言
+import comment_generator as _cg_d
+check("方言: 空欄なら何も足さない", _cg_d.dialect_instruction("") == "" and _cg_d.dialect_instruction("  ") == "")
+check("方言: 名古屋弁の指示が入る", "名古屋弁で書くこと" in _cg_d.dialect_instruction("名古屋弁"))
+check("方言: 名古屋弁は言葉の例も渡す（関西弁と混ざらないように）", "だがや" in _cg_d.dialect_instruction("名古屋弁") and "ほんま" in _cg_d.dialect_hint("名古屋弁"))
+check("方言: 例が無い方言でも指示は入る", "博多弁で書くこと" in _cg_d.dialect_instruction("博多弁") and _cg_d.dialect_hint("博多弁") == "")
+class _DialectCfg(_TaroCfg):
+    TARO_DIALECT = "名古屋弁"
+_wd = ra_mod.ReadAloudWorker(_DialectCfg(), gemini_api_key="x", base_dir=_ra_dir, play_func=lambda w: None)
+check("方言: 太郎の声もその地方のイントネーションで", _wd.taro_voice_style.endswith("名古屋弁のイントネーションで") and _wd.taro_voice_style.startswith("生意気に"))
+_wn = ra_mod.ReadAloudWorker(_TaroCfg(), gemini_api_key="x", base_dir=_ra_dir, play_func=lambda w: None)
+check("方言: 指定がなければ声の口調はそのまま", "イントネーション" not in _wn.taro_voice_style)
+
 ok = sum(1 for _, c in results if c)
 print(f"===== 結果: {ok}/{len(results)} 件成功 =====")
 sys.exit(0 if ok == len(results) else 1)

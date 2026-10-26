@@ -160,6 +160,11 @@ class ReadAloudWorker:
         pron = getattr(config, "TARO_VOICE_PRONUNCIATION", "")
         if pron:
             self.taro_voice_style = (self.taro_voice_style + "。" + pron) if self.taro_voice_style else pron
+        # v4.60: 方言を使う日は、声もその地方のイントネーションで
+        dialect = (getattr(config, "TARO_DIALECT", "") or "").strip()
+        if dialect:
+            note = f"{dialect}のイントネーションで"
+            self.taro_voice_style = (self.taro_voice_style + "。" + note) if self.taro_voice_style else note
         self.bot_nick = getattr(config, "BOT_NICK", "")
         # 太郎の声づくり専用の手（再生の列とは別に、先に作り始めておくため）
         self._taro_pool = ThreadPoolExecutor(max_workers=2)

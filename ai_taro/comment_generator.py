@@ -27,6 +27,35 @@ from enum import Enum
 logger = logging.getLogger(__name__)
 
 
+# v4.60: 軽いモデルは方言を関西弁と混ぜやすいので、よく使う方言は言葉の例を渡す
+DIALECT_HINTS = {
+    "名古屋弁": ("使う言葉の例:「〜だがや」「〜だがね」「〜しとる」「でら」「どえりゃあ」「〜でかん」"
+                 "「〜みゃあ」「〜だで」「〜しやあ」「〜しよまい」「ほんとだがね」"
+                 "（「ほんま」「〜やん」「〜やね」「〜なんや」「〜へん」は関西弁なので使わない）"),
+}
+
+
+def dialect_hint(dialect: str) -> str:
+    dialect = (dialect or '').strip()
+    return DIALECT_HINTS.get(dialect, '')
+
+
+def dialect_instruction(dialect: str) -> str:
+    """v4.60: 方言の指示（config.TARO_DIALECT が空なら何も足さない）"""
+    dialect = (dialect or '').strip()
+    if not dialect:
+        return ''
+    hint = dialect_hint(dialect)
+    return (f"\n【話し方（{dialect}）】\n"
+            + (f"- {hint}\n" if hint else "") +
+            f"- すべてのコメントを{dialect}で書くこと。語尾・相づち・言い回しを{dialect}らしくする\n"
+            f"- 毎回かならず{dialect}の語尾か言い回しを1つ以上入れる。標準語だけのコメントは禁止\n"
+            f"- 若者言葉より{dialect}を優先する。若者言葉やダジャレを使うときも{dialect}の口調に溶け込ませる\n"
+            f"- 同じ{dialect}の語尾を毎回続けて使わない。わざとらしくせず、地元の人が普通に話す感じで\n"
+            f"- ほかの地方の方言（特に関西弁の「〜やん」「〜やね」「わい」など）と混ぜない\n"
+            f"- 読めないほど崩さないこと\n")
+
+
 class CommentTrigger(Enum):
     SPEECH_RESPONSE = "speech_response"
     SILENCE_BREAKER = "silence_breaker"
@@ -217,6 +246,8 @@ class CommentGenerator:
             if profile_text:
                 prompt += f"\n{profile_text}"
 
+        prompt += dialect_instruction(getattr(self.config, 'TARO_DIALECT', ''))
+
         return prompt
 
     def reset_history(self):
@@ -355,9 +386,13 @@ class CommentGenerator:
 
     def _phrasing_note(self) -> str:
         """直近のコメントで使った言い回しを「今回は使わない」として添える"""
+        # v4.60: 方言はシステム側の指示だけだと薄れるので、毎回の依頼の最後にも念押しする
+        dialect = (getattr(self.config, 'TARO_DIALECT', '') or '').strip()
+        dialect_note = (f"\n\n【話し方】このコメントは{dialect}で書くこと（{dialect}の語尾や言い回しを必ず入れる。"
+                        f"ほかの地方の方言は混ぜない）。{dialect_hint(dialect)}") if dialect else ""
         recent = self._recent_outputs[-5:]
         if not recent:
-            return ""
+            return dialect_note
         avoid = []
         for w in self.SLANG_WORDS:          # 流行語: 直近3回で1度でも使ったら避ける
             if any(w in c for c in recent[-3:]) and not any(w in a for a in avoid):
@@ -370,7 +405,7 @@ class CommentGenerator:
             note += f"\n\n【言い回しの注意】直近のコメントで使ったので、今回は次の言い回しを使わないこと: {'、'.join(avoid)}"
         if sum(1 for c in recent[-3:] if c.startswith("「")) >= 1:
             note += "\n相手の言葉を「」で引用して始める書き出しが続いているので、今回は引用で始めないこと。"
-        return note
+        return note + dialect_note
 
     def _repeated_slang(self, comment: str) -> list:
         """今回のコメントに、直近3回のコメントでも使った流行語が入っていれば、その語を返す"""

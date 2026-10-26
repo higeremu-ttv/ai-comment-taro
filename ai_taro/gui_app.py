@@ -124,7 +124,7 @@ class QueueHandler(logging.Handler):
 class BotGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("AIコメント太郎 v4.59")
+        self.root.title("AIコメント太郎 v4.60")
         self.root.geometry("820x660")
         self.root.resizable(True, True)
         self.root.configure(bg="#1a1a2e")
@@ -219,7 +219,7 @@ class BotGUI:
         header = tk.Frame(self.root, bg=self.colors["bg"], pady=10)
         header.pack(fill="x", padx=16)
 
-        tk.Label(header, text="🎮  AIコメント太郎  v4.59",
+        tk.Label(header, text="🎮  AIコメント太郎  v4.60",
                  bg=self.colors["bg"], fg=self.colors["text"],
                  font=("Yu Gothic UI", 16, "bold")).pack(side="left")
 
@@ -489,6 +489,7 @@ class BotGUI:
         self.var_ng_words = tk.StringVar()
         self.var_ai_name = tk.StringVar()
         self.var_streamer_name = tk.StringVar()
+        self.var_taro_dialect = tk.StringVar()         # v4.60
         self.var_comment_max_tokens = tk.StringVar()
         self.var_viewer_commands_enabled = tk.BooleanVar()
         self.var_viewer_command_prefix = tk.StringVar()
@@ -552,6 +553,8 @@ class BotGUI:
         make_field(sec_ai, "AIの名前", self.var_ai_name)
         make_note(sec_ai, "配信者がこの名前で呼びかけると直接会話モードになります。例: 太郎、アリス")
         make_field(sec_ai, "配信者の名前", self.var_streamer_name)
+        make_field(sec_ai, "太郎のしゃべり方（方言）", self.var_taro_dialect)
+        make_note(sec_ai, "方言でしゃべらせたい日だけ入れる。例: 名古屋弁、関西弁、博多弁。空欄でいつもの話し方。次の起動から効きます")
         make_note(sec_ai, "AIが配信者を呼ぶときに使用します。例: 配信者名・ニックネームなど")
 
         tokens_row = tk.Frame(sec_ai, bg=self.colors["panel"])
@@ -768,6 +771,7 @@ class BotGUI:
             self.var_gimmick_enabled.set(getattr(cfg, "GIMMICK_ENABLED", True))
             self.var_gimmick_words.set(getattr(cfg, "GIMMICK_WORDS", "行進,ランダム,おなかすいた"))
             self.var_event_banned_words.set(getattr(cfg, "EVENT_BANNED_WORDS", ""))
+            self.var_taro_dialect.set(getattr(cfg, "TARO_DIALECT", ""))
             self.var_speech_gimmicks.set(getattr(cfg, "SPEECH_GIMMICKS", "ビクロイ=gg"))
             self.var_chat_threshold.set(str(getattr(cfg, "CHAT_ACTIVITY_THRESHOLD", "3")))
             self.var_chat_window.set(str(getattr(cfg, "CHAT_ACTIVITY_WINDOW_SECONDS", "60")))
@@ -859,6 +863,8 @@ class BotGUI:
                                     str(self.var_gimmick_enabled.get()), is_string=False)
             content = replace_value(content, "GIMMICK_WORDS",
                                     self.var_gimmick_words.get())
+            content = replace_value(content, "TARO_DIALECT",
+                                    self.var_taro_dialect.get().replace('"', '').replace("'", ""))
             content = replace_value(content, "EVENT_BANNED_WORDS",
                                     self.var_event_banned_words.get().replace('"', '').replace("'", ""))
             content = replace_value(content, "SPEECH_GIMMICKS",
@@ -1008,7 +1014,7 @@ class BotGUI:
             logger.info("=" * 50)
             # 起動のしかたを記録に残す（以前は常に「VCモード」と出ていて、VCを使った日と区別できなかった）
             _mode_name = "太郎＋読み上げ" if getattr(config, 'READ_ALOUD_ENABLED', False) else "太郎だけ"
-            logger.info(f"AIコメント太郎 v4.59 を「{_mode_name}」で起動します")
+            logger.info(f"AIコメント太郎 v4.60 を「{_mode_name}」で起動します")
             logger.info(f"チャンネル: #{config.CHANNEL_NAME}")
             _engine = getattr(config, 'SPEECH_ENGINE', 'whisper')
             _engine_label = f"faster-whisper {getattr(config, 'WHISPER_MODEL_SIZE', 'medium')}（ローカル）" if _engine == 'whisper' else "Google Web Speech API"
@@ -1421,7 +1427,7 @@ class BotGUI:
         Twitchの受信と読み上げ係だけを起動する。太郎はチャットに一切投稿しない。
         _run_bot の try の中から呼ばれるので、終了時の後片付け（_cleanup_bot）はそちらで行われる"""
         logger.info("=" * 50)
-        logger.info("AIコメント太郎 v4.59 を「読み上げだけ」で起動します")
+        logger.info("AIコメント太郎 v4.60 を「読み上げだけ」で起動します")
         logger.info("（AIのコメント・マイクの聞き取り・俳句/謎かけ・ギミック参加は動かしません）")
         logger.info(f"チャンネル: #{config.CHANNEL_NAME}")
         logger.info("=" * 50)
