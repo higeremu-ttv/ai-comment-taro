@@ -28,6 +28,14 @@ from comment_generator import CommentTrigger
 logger = logging.getLogger(__name__)
 
 
+HONORIFICS = ("さん", "ちゃん", "くん", "君", "様", "さま", "氏", "先輩", "姉さん", "兄さん", "姐さん", "姉御", "お兄ちゃん", "お姉ちゃん")
+
+
+def with_honorific(name: str) -> str:
+    """v4.61: 呼び名にすでに敬称が付いていれば、さらに「さん」を付けない（「両目姉さんさん」対策）"""
+    return name if name.endswith(HONORIFICS) else f"{name}さん"
+
+
 class LaneManager:
     """入力の振り分けとコメントのペース管理を一手に引き受けるクラス。
 
@@ -710,7 +718,7 @@ class LaneManager:
         prev = profile_mgr.set_viewer_name(iv['username'], name) if profile_mgr else "未設定"
         self._last_memory = ('viewer_name', iv['username'], prev)
         self._interview = None
-        confirm = f"{name}さんですね、覚えました！これからよろしくね！"
+        confirm = f"{with_honorific(name)}ですね、覚えました！これからよろしくね！"
         logger.info(f"[取材完了] {iv['username']} = {name}")
         self._send_priority(confirm)
         return True

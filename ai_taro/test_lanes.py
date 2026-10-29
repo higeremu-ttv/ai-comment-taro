@@ -1905,6 +1905,11 @@ check("方言: 太郎の声もその地方のイントネーションで", _wd.t
 _wn = ra_mod.ReadAloudWorker(_TaroCfg(), gemini_api_key="x", base_dir=_ra_dir, play_func=lambda w: None)
 check("方言: 指定がなければ声の口調はそのまま", "イントネーション" not in _wn.taro_voice_style)
 
+# v4.61 呼び名の敬称
+import lane_manager as _lm_h
+check("呼び名: 敬称が無ければ「さん」を付ける", _lm_h.with_honorific("りょうべに") == "りょうべにさん")
+check("呼び名: すでに敬称があれば二重にしない", _lm_h.with_honorific("両目姉さん") == "両目姉さん" and _lm_h.with_honorific("ぺちちゃん") == "ぺちちゃん")
+
 ok = sum(1 for _, c in results if c)
 print(f"===== 結果: {ok}/{len(results)} 件成功 =====")
 sys.exit(0 if ok == len(results) else 1)
