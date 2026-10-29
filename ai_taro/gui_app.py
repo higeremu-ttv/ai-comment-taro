@@ -45,13 +45,15 @@ def make_file_log_handler(base_dir: str = ""):
     return handler
 
 
-def pick_event_kind(now: float, last_nazokake_time: float, nazokake_interval_minutes: float) -> str:
+def pick_event_kind(now: float, last_nazokake_time: float, nazokake_interval_minutes: float,
+                    haiku_enabled: bool = True) -> str:
     """v4.59: 次のイベントを俳句にするか謎かけにするか。
     謎かけは前回（起動時を含む）から nazokake_interval_minutes 分たっていたら1回、それ以外は俳句。
     0以下なら謎かけはしない（配信者の指示「謎かけは2時間に1回くらいでいい」2026-10-08）"""
     if nazokake_interval_minutes and nazokake_interval_minutes > 0             and now - last_nazokake_time >= nazokake_interval_minutes * 60:
         return "nazokake"
-    return "haiku"
+    # v4.61: 俳句をやめた日は何もしない（配信者の指示「俳句はもう詠まなくていい」2026-10-30）
+    return "haiku" if haiku_enabled else "none"
 
 
 class _StderrToLog:
@@ -124,7 +126,7 @@ class QueueHandler(logging.Handler):
 class BotGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("AIコメント太郎 v4.60")
+        self.root.title("AIコメント太郎 v4.61")
         self.root.geometry("820x660")
         self.root.resizable(True, True)
         self.root.configure(bg="#1a1a2e")
@@ -219,7 +221,7 @@ class BotGUI:
         header = tk.Frame(self.root, bg=self.colors["bg"], pady=10)
         header.pack(fill="x", padx=16)
 
-        tk.Label(header, text="🎮  AIコメント太郎  v4.60",
+        tk.Label(header, text="🎮  AIコメント太郎  v4.61",
                  bg=self.colors["bg"], fg=self.colors["text"],
                  font=("Yu Gothic UI", 16, "bold")).pack(side="left")
 
@@ -1014,7 +1016,7 @@ class BotGUI:
             logger.info("=" * 50)
             # 起動のしかたを記録に残す（以前は常に「VCモード」と出ていて、VCを使った日と区別できなかった）
             _mode_name = "太郎＋読み上げ" if getattr(config, 'READ_ALOUD_ENABLED', False) else "太郎だけ"
-            logger.info(f"AIコメント太郎 v4.60 を「{_mode_name}」で起動します")
+            logger.info(f"AIコメント太郎 v4.61 を「{_mode_name}」で起動します")
             logger.info(f"チャンネル: #{config.CHANNEL_NAME}")
             _engine = getattr(config, 'SPEECH_ENGINE', 'whisper')
             _engine_label = f"faster-whisper {getattr(config, 'WHISPER_MODEL_SIZE', 'medium')}（ローカル）" if _engine == 'whisper' else "Google Web Speech API"
@@ -1269,18 +1271,20 @@ class BotGUI:
                         and now - last_event_time[0] >= next_event_interval):
                     try:
                         kind = pick_event_kind(now, last_nazokake_time[0],
-                                               getattr(config, 'NAZOKAKE_INTERVAL_MINUTES', 120))
+                                               getattr(config, 'NAZOKAKE_INTERVAL_MINUTES', 120),
+                                               getattr(config, 'HAIKU_ENABLED', True))
                         if kind == "nazokake":
                             last_nazokake_time[0] = now
                             _do_nazokake_event()
-                        else:
+                        elif kind == "haiku":
                             _do_haiku_event()
                     except Exception as e:
                         logger.warning(f"[イベント] 生成失敗: {e}")
 
                     last_event_time[0] = time.time()
                     next_event_interval = random.randint(15 * 60, 25 * 60)
-                    logger.info(f"[イベント] 次まで {next_event_interval // 60} 分")
+                    if kind != "none":
+                        logger.info(f"[イベント] 次まで {next_event_interval // 60} 分")
 
         except Exception as e:
             logging.getLogger("gui_bot").error(f"Bot実行エラー: {e}")
@@ -1427,7 +1431,7 @@ class BotGUI:
         Twitchの受信と読み上げ係だけを起動する。太郎はチャットに一切投稿しない。
         _run_bot の try の中から呼ばれるので、終了時の後片付け（_cleanup_bot）はそちらで行われる"""
         logger.info("=" * 50)
-        logger.info("AIコメント太郎 v4.60 を「読み上げだけ」で起動します")
+        logger.info("AIコメント太郎 v4.61 を「読み上げだけ」で起動します")
         logger.info("（AIのコメント・マイクの聞き取り・俳句/謎かけ・ギミック参加は動かしません）")
         logger.info(f"チャンネル: #{config.CHANNEL_NAME}")
         logger.info("=" * 50)

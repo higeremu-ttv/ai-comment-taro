@@ -1846,6 +1846,8 @@ import gui_app as _gui_ev
 check("イベント: 謎かけから2時間たつまでは俳句", _gui_ev.pick_event_kind(1000 + 119 * 60, 1000, 120) == "haiku")
 check("イベント: 2時間たったら謎かけ", _gui_ev.pick_event_kind(1000 + 120 * 60, 1000, 120) == "nazokake")
 check("イベント: 0なら謎かけはしない", _gui_ev.pick_event_kind(1000 + 999 * 60, 1000, 0) == "haiku")
+check("イベント: 俳句オフなら謎かけ以外の回は何もしない", _gui_ev.pick_event_kind(1000 + 119 * 60, 1000, 120, False) == "none")
+check("イベント: 俳句オフでも2時間たったら謎かけ", _gui_ev.pick_event_kind(1000 + 120 * 60, 1000, 120, False) == "nazokake")
 
 # ============================================================
 # v4.59 「黙れ」でしばらく黙る
