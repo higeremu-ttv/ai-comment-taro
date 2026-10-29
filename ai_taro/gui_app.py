@@ -14,6 +14,7 @@ from tkinter import ttk, scrolledtext, messagebox
 import threading
 import queue
 import logging
+import usage_meter  # v4.62: 料金の概算
 import sys
 import os
 import time
@@ -126,7 +127,7 @@ class QueueHandler(logging.Handler):
 class BotGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("AIコメント太郎 v4.61")
+        self.root.title("AIコメント太郎 v4.62")
         self.root.geometry("820x660")
         self.root.resizable(True, True)
         self.root.configure(bg="#1a1a2e")
@@ -221,7 +222,7 @@ class BotGUI:
         header = tk.Frame(self.root, bg=self.colors["bg"], pady=10)
         header.pack(fill="x", padx=16)
 
-        tk.Label(header, text="🎮  AIコメント太郎  v4.61",
+        tk.Label(header, text="🎮  AIコメント太郎  v4.62",
                  bg=self.colors["bg"], fg=self.colors["text"],
                  font=("Yu Gothic UI", 16, "bold")).pack(side="left")
 
@@ -1016,7 +1017,8 @@ class BotGUI:
             logger.info("=" * 50)
             # 起動のしかたを記録に残す（以前は常に「VCモード」と出ていて、VCを使った日と区別できなかった）
             _mode_name = "太郎＋読み上げ" if getattr(config, 'READ_ALOUD_ENABLED', False) else "太郎だけ"
-            logger.info(f"AIコメント太郎 v4.61 を「{_mode_name}」で起動します")
+            logger.info(f"AIコメント太郎 v4.62 を「{_mode_name}」で起動します")
+            usage_meter.reset()  # v4.62: 料金の概算はこの起動から数える
             logger.info(f"チャンネル: #{config.CHANNEL_NAME}")
             _engine = getattr(config, 'SPEECH_ENGINE', 'whisper')
             _engine_label = f"faster-whisper {getattr(config, 'WHISPER_MODEL_SIZE', 'medium')}（ローカル）" if _engine == 'whisper' else "Google Web Speech API"
@@ -1245,6 +1247,7 @@ class BotGUI:
             # v4.20: 手帳の途中保存タイマー（クラッシュしても学習が消えない保険）
             autosave_interval = getattr(config, 'PROFILE_AUTOSAVE_SECONDS', 600)
             last_autosave = [time.time()]
+            last_cost_report = [time.time()]  # v4.62: 料金の概算を30分ごとに記録へ
 
             while self.bot_running:
                 time.sleep(1)
@@ -1263,6 +1266,11 @@ class BotGUI:
                             comment_gen._profile_manager.save()
                     except Exception:
                         pass
+
+                # v4.62: 料金の概算を30分ごとに記録へ
+                if time.time() - last_cost_report[0] >= 30 * 60:
+                    last_cost_report[0] = time.time()
+                    usage_meter.log_report(getattr(config, 'USD_JPY', 150), "起動から")
 
                 # イベントタイマーチェック
                 now = time.time()
@@ -1431,7 +1439,8 @@ class BotGUI:
         Twitchの受信と読み上げ係だけを起動する。太郎はチャットに一切投稿しない。
         _run_bot の try の中から呼ばれるので、終了時の後片付け（_cleanup_bot）はそちらで行われる"""
         logger.info("=" * 50)
-        logger.info("AIコメント太郎 v4.61 を「読み上げだけ」で起動します")
+        logger.info("AIコメント太郎 v4.62 を「読み上げだけ」で起動します")
+        usage_meter.reset()  # v4.62: 料金の概算はこの起動から数える
         logger.info("（AIのコメント・マイクの聞き取り・俳句/謎かけ・ギミック参加は動かしません）")
         logger.info(f"チャンネル: #{config.CHANNEL_NAME}")
         logger.info("=" * 50)
@@ -1476,6 +1485,11 @@ class BotGUI:
 
     def _cleanup_bot(self):
         """Botを停止してリソースを解放する"""
+        try:  # v4.62: この起動でかかった料金の概算を記録に残す
+            import config as _cfg_cost
+            usage_meter.log_report(getattr(_cfg_cost, 'USD_JPY', 150), "今回の起動")
+        except Exception:
+            pass
         if self.bot_instance:
             try:
                 if self.bot_instance.get("audio"):  # v4.57: 読み上げだけのときは無い

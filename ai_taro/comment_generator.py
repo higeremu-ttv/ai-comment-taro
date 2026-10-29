@@ -19,12 +19,33 @@
 """
 
 import logging
+import usage_meter  # v4.62: 料金の概算
 import time
 import re
 from typing import Optional
 from enum import Enum
 
 logger = logging.getLogger(__name__)
+
+
+VALID_ENDINGS = tuple('。．！？!?…♪〜～」』）)ｗw草')
+
+
+def finished_normally(response) -> bool:
+    """v4.62: AIが最後まで書き終えたか（finish_reason が STOP）。分からなければ False"""
+    try:
+        fr = response.candidates[0].finish_reason
+        return getattr(fr, "name", str(fr)) in ("STOP", "1") or fr == 1
+    except Exception:
+        return False
+
+
+def add_period_if_missing(text: str) -> str:
+    """v4.62: 文末に句点などが無ければ「。」を足す"""
+    t = (text or "").rstrip()
+    if t and not t.endswith(VALID_ENDINGS):
+        return t + "。"
+    return t
 
 
 # v4.60: 軽いモデルは方言を関西弁と混ぜやすいので、よく使う方言は言葉の例を渡す
@@ -468,13 +489,19 @@ class CommentGenerator:
             self.api_request_times.append(now)
 
             response = model.generate_content(prompt)
+            usage_meter.record_sdk(getattr(model, 'model_name', model_name), response)
 
             if not response or not response.text:
                 logger.warning("Gemini APIから空のレスポンスが返りました")
                 return None
 
+            text = response.text
+            # v4.62: 新しいモデル（3.5 Flash-Lite 等）は言い終えていても句点を付けないことが多い。
+            # AI自身が「書き終えた」（STOP）と言っているときだけ句点を補う。途中で切れた（MAX_TOKENS 等）ものは従来どおり破棄
+            if require_ending and finished_normally(response):
+                text = add_period_if_missing(text)
             # v4.40: 検査・整形は共通部品（外部AIと同じチェックを通す）
-            return self._postprocess_comment(response.text, require_ending)
+            return self._postprocess_comment(text, require_ending)
 
         except Exception as e:
             error_str = str(e)
@@ -499,6 +526,7 @@ class CommentGenerator:
             self.api_request_times = [t for t in self.api_request_times if now - t < 60]
             self.api_request_times.append(now)
             response = model.generate_content(prompt)
+            usage_meter.record_sdk(getattr(model, 'model_name', model_name), response)
             if not response or not response.text:
                 return None
             return response.text.strip()
@@ -559,8 +587,7 @@ class CommentGenerator:
         # 呼び出し側が自動でLiteに退避するので、尻切れ文が配信に出ることはない
         # v4.42: 俳句・謎かけは句点なしで終わるのが正しいため require_ending=False で免除
         if require_ending:
-            valid_endings = tuple('。．！？!?…♪〜～」』）)ｗw草')
-            if not comment.endswith(valid_endings):
+            if not comment.endswith(VALID_ENDINGS):
                 logger.warning(f"[尻切れ検出] 文が完結していないため破棄: '...{comment[-20:]}'")
                 return None
 

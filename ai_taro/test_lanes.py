@@ -1914,6 +1914,38 @@ check("呼び名: すでに敬称があれば二重にしない", _lm_h.with_hon
 _cg_leak = _cg_d.CommentGenerator.__new__(_cg_d.CommentGenerator)
 check("漏れ: 言い回しの注意書きが出たら捨てる", _cg_leak._looks_like_prompt_leak("わかったで〜。（直近のコメントで「じゃん」を使ったので、今回は避ける）") and not _cg_leak._looks_like_prompt_leak("いってらっしゃい、ゆっくりしてきてね"))
 
+# v4.62 句点の補い
+class _FR: name = "STOP"
+class _Cand: finish_reason = _FR()
+class _RespStop: candidates = [_Cand()]
+class _FR2: name = "MAX_TOKENS"
+class _Cand2: finish_reason = _FR2()
+class _RespMax: candidates = [_Cand2()]
+check("句点: 書き終えた返事なら句点を補う", _cg_d.finished_normally(_RespStop()) and _cg_d.add_period_if_missing("最高だらぁ") == "最高だらぁ。")
+check("句点: 途中で切れた返事は補わない（破棄のまま）", not _cg_d.finished_normally(_RespMax()) and not _cg_d.finished_normally(object()))
+check("句点: すでに終わっていれば何もしない", _cg_d.add_period_if_missing("おめでとう！") == "おめでとう！")
+
+# v4.62 料金の概算
+import usage_meter as _um
+import datetime as _dt
+_um.reset()
+_um.record("models/gemini-3.5-flash-lite", 1_000_000, 100_000)
+_um.record_rest("gemini-3.8-flash-lite-tts", {"usageMetadata": {"promptTokenCount": 1000, "candidatesTokenCount": 2000}})
+class _UM: prompt_token_count = 100; candidates_token_count = 10; thoughts_token_count = 5
+class _Resp: usage_metadata = _UM()
+_um.record_sdk("gemini-2.5-flash", _Resp())
+_snap = _um.snapshot()
+check("料金: モデル名の頭の models/ を外して数える", _snap["gemini-3.5-flash-lite"] == {"calls": 1, "in": 1_000_000, "out": 100_000})
+check("料金: 思考トークンも出力に入れる", _snap["gemini-2.5-flash"]["out"] == 15)
+_usd, _unk = _um.cost_usd(_snap, _dt.date(2026, 10, 30))
+check("料金: 合計ドルの計算", abs(_usd - (0.30 + 0.25 + 0.0005 + 0.012 + 0.00003 + 0.0000375)) < 1e-6 and _unk == [])
+check("料金: 2027年からの値上げを反映", _um.price_of("gemini-3.8-flash-lite-tts", _dt.date(2027, 1, 1)) == (1.00, 12.00))
+_um.record("gemini-9.9-mystery", 10, 10)
+check("料金: 単価が無いモデルは別に知らせる", any("gemini-9.9-mystery" in l for l in _um.report_lines(157)))
+_um.record_sdk("x", object())
+check("料金: 使用量が取れない応答でも落ちない", True)
+_um.reset()
+
 ok = sum(1 for _, c in results if c)
 print(f"===== 結果: {ok}/{len(results)} 件成功 =====")
 sys.exit(0 if ok == len(results) else 1)

@@ -13,6 +13,7 @@
 import json
 import os
 import logging
+import usage_meter  # v4.62: 料金の概算
 import time
 from typing import Optional
 
@@ -442,6 +443,7 @@ class ProfileManager:
 JSONのみ出力。分からない項目は空のリスト・空のオブジェクトでよい。"""
 
                 response = model.generate_content(prompt)
+                usage_meter.record_sdk(getattr(model, 'model_name', ''), response)
                 if response and response.text:
                     text = response.text.strip().replace('```json', '').replace('```', '').strip()
                     data = json.loads(text)

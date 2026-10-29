@@ -19,6 +19,7 @@ OpenAI互換形式（業界標準の呼び出し方）に対応しており、�
 
 import json
 import logging
+import usage_meter  # v4.62: 料金の概算
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -115,6 +116,7 @@ def gemini_search_answer(api_key: str, model: str, system_prompt: str,
             logger.warning(f"検索グラウンディング エラー: HTTP {resp.status_code} {resp.text[:200]}")
             return None
         data = resp.json()
+        usage_meter.record_rest(model, data)
         cands = data.get("candidates", [])
         if not cands:
             return None

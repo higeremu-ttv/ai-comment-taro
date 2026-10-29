@@ -26,6 +26,7 @@ speech_metadata は SDK（google-genai）の型に無いので、VOICEVOXと同�
 
 import base64
 import logging
+import usage_meter  # v4.62: 料金の概算
 import threading
 import time
 from collections import deque
@@ -150,6 +151,7 @@ def synthesize(text: str, api_key: str, model: str = DEFAULT_MODEL,
                 _learn_from_429(model, resp)
             return None
         data = resp.json()
+        usage_meter.record_rest(model, data)
         candidates = data.get("candidates") or []
         if not candidates:
             logger.warning("Gemini TTS: 応答にcandidatesがありません")
