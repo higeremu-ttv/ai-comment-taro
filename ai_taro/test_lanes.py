@@ -1910,6 +1910,10 @@ import lane_manager as _lm_h
 check("呼び名: 敬称が無ければ「さん」を付ける", _lm_h.with_honorific("りょうべに") == "りょうべにさん")
 check("呼び名: すでに敬称があれば二重にしない", _lm_h.with_honorific("両目姉さん") == "両目姉さん" and _lm_h.with_honorific("ぺちちゃん") == "ぺちちゃん")
 
+# v4.61 注意書きの漏れ
+_cg_leak = _cg_d.CommentGenerator.__new__(_cg_d.CommentGenerator)
+check("漏れ: 言い回しの注意書きが出たら捨てる", _cg_leak._looks_like_prompt_leak("わかったで〜。（直近のコメントで「じゃん」を使ったので、今回は避ける）") and not _cg_leak._looks_like_prompt_leak("いってらっしゃい、ゆっくりしてきてね"))
+
 ok = sum(1 for _, c in results if c)
 print(f"===== 結果: {ok}/{len(results)} 件成功 =====")
 sys.exit(0 if ok == len(results) else 1)
