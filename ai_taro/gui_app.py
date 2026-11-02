@@ -20,6 +20,9 @@ import os
 import time
 
 # ログをGUIに転送するハンドラー
+# v4.63: 相槌用モデルの選択肢（管理画面）
+LITE_MODEL_CHOICES = ["gemini-3.5-flash-lite", "gemini-2.5-flash-lite"]
+
 LOG_KEEP_DAYS = 30  # v4.59: 記録ファイルを何日分残すか
 
 
@@ -127,7 +130,7 @@ class QueueHandler(logging.Handler):
 class BotGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("AIコメント太郎 v4.62")
+        self.root.title("AIコメント太郎 v4.63")
         self.root.geometry("820x660")
         self.root.resizable(True, True)
         self.root.configure(bg="#1a1a2e")
@@ -222,7 +225,7 @@ class BotGUI:
         header = tk.Frame(self.root, bg=self.colors["bg"], pady=10)
         header.pack(fill="x", padx=16)
 
-        tk.Label(header, text="🎮  AIコメント太郎  v4.62",
+        tk.Label(header, text="🎮  AIコメント太郎  v4.63",
                  bg=self.colors["bg"], fg=self.colors["text"],
                  font=("Yu Gothic UI", 16, "bold")).pack(side="left")
 
@@ -513,7 +516,20 @@ class BotGUI:
         sec_gemini = make_section("Gemini API 設定（最重要）", color=self.colors["gemini"])
         make_field(sec_gemini, "Gemini APIキー", self.var_gemini_api_key, show="*")
         make_note(sec_gemini, "APIキーの取得: https://aistudio.google.com/app/apikey  無料枠: モデルごとに1日約1500リクエスト / 1分15リクエスト")
-        make_note(sec_gemini, "相槌用モデル: gemini-2.5-flash-lite（固定・文脈レーンやちょっかいで使用）")
+        # v4.63: 相槌用（ふだんのコメントを書く）モデルを選べるように
+        lite_row = tk.Frame(sec_gemini, bg=self.colors["panel"])
+        lite_row.pack(fill="x", padx=12, pady=3)
+        tk.Label(lite_row, text="相槌用モデル（ふだんのコメント）", width=26, anchor="w",
+                 bg=self.colors["panel"], fg=self.colors["text"],
+                 font=("Yu Gothic UI", 10)).pack(side="left")
+        ttk.Combobox(
+            lite_row, textvariable=self.var_gemini_model,
+            values=LITE_MODEL_CHOICES, state="readonly",
+            font=("Yu Gothic UI", 10), width=24
+        ).pack(side="left")
+        make_note(sec_gemini, "gemini-3.5-flash-lite: 方言が上手・少し高い（1回 約0.1円）。"
+                              "gemini-2.5-flash-lite: 安い（約3分の1）・方言は苦手。保存して次の起動から効きます。"
+                              "太郎の声（読み上げ）はこの設定と関係なく、別の声用モデルのままです")
         smart_row = tk.Frame(sec_gemini, bg=self.colors["panel"])
         smart_row.pack(fill="x", padx=12, pady=3)
         tk.Label(smart_row, text="会話用モデル", width=26, anchor="w",
@@ -814,6 +830,8 @@ class BotGUI:
                     replacement = rf'\g<1>{new_value}'
                 return re.sub(pattern, replacement, text, flags=re.MULTILINE)
 
+            if self.var_gemini_model.get() in LITE_MODEL_CHOICES:  # v4.63
+                content = replace_value(content, "GEMINI_MODEL", self.var_gemini_model.get())
             content = replace_value(content, "GEMINI_MODEL_SMART",
                                     self.var_gemini_model_smart.get())
             content = replace_value(content, "SMART_PROVIDER",
@@ -1017,7 +1035,7 @@ class BotGUI:
             logger.info("=" * 50)
             # 起動のしかたを記録に残す（以前は常に「VCモード」と出ていて、VCを使った日と区別できなかった）
             _mode_name = "太郎＋読み上げ" if getattr(config, 'READ_ALOUD_ENABLED', False) else "太郎だけ"
-            logger.info(f"AIコメント太郎 v4.62 を「{_mode_name}」で起動します")
+            logger.info(f"AIコメント太郎 v4.63 を「{_mode_name}」で起動します")
             usage_meter.reset()  # v4.62: 料金の概算はこの起動から数える
             logger.info(f"チャンネル: #{config.CHANNEL_NAME}")
             _engine = getattr(config, 'SPEECH_ENGINE', 'whisper')
@@ -1439,7 +1457,7 @@ class BotGUI:
         Twitchの受信と読み上げ係だけを起動する。太郎はチャットに一切投稿しない。
         _run_bot の try の中から呼ばれるので、終了時の後片付け（_cleanup_bot）はそちらで行われる"""
         logger.info("=" * 50)
-        logger.info("AIコメント太郎 v4.62 を「読み上げだけ」で起動します")
+        logger.info("AIコメント太郎 v4.63 を「読み上げだけ」で起動します")
         usage_meter.reset()  # v4.62: 料金の概算はこの起動から数える
         logger.info("（AIのコメント・マイクの聞き取り・俳句/謎かけ・ギミック参加は動かしません）")
         logger.info(f"チャンネル: #{config.CHANNEL_NAME}")
