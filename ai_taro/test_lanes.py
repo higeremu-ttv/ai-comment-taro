@@ -1946,6 +1946,26 @@ _um.record_sdk("x", object())
 check("料金: 使用量が取れない応答でも落ちない", True)
 _um.reset()
 
+# v4.64 太郎の声だけ小さく
+class _QuietTaroCfg(_TaroCfg):
+    TARO_VOICE_VOLUME = 70
+_orig_scale = ra_mod.scale_wav
+ra_mod.scale_wav = lambda w, pct: f"x{pct}:".encode() + w
+_played_v, _vc_v = [], []
+wv = ra_mod.ReadAloudWorker(_QuietTaroCfg(), gemini_api_key="x", base_dir=_ra_dir,
+                            play_func=_played_v.append, pipeline_func=_pipe_rec,
+                            engine_check=lambda: True, taro_synth=lambda text, **kw: b"T:" + text.encode())
+wv._play_taro_to_vc = _vc_v.append
+wv.start()
+wv.enqueue_taro("小さめ")
+wv.enqueue_comment("viewer1", "ふつう")
+_wait_played(_played_v, 2)
+wv.stop()
+ra_mod.scale_wav = _orig_scale
+check("太郎の声の大きさ: 太郎の声だけ70%にする", _played_v[:1] == ["x70:T:小さめ".encode()])
+check("太郎の声の大きさ: 視聴者コメントは変えない", "VV:viewer1:ふつう".encode() in _played_v)
+check("太郎の声の大きさ: VCに流す分は元の大きさから（VCの設定で別に調整）", _vc_v[:1] == ["T:小さめ".encode()])
+
 ok = sum(1 for _, c in results if c)
 print(f"===== 結果: {ok}/{len(results)} 件成功 =====")
 sys.exit(0 if ok == len(results) else 1)

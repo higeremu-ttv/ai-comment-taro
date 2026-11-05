@@ -172,6 +172,8 @@ class ReadAloudWorker:
         self._vc_play = vc_play_func
         self.taro_vc_device = getattr(config, "TARO_VC_OUTPUT_DEVICE", "")
         self.taro_vc_volume = getattr(config, "TARO_VC_VOLUME", 50)
+        # v4.64: 太郎の声だけの大きさ（%）。視聴者コメントの読み上げは変えない
+        self.taro_voice_volume = getattr(config, "TARO_VOICE_VOLUME", 100)
         self.taro_vc_on = False  # 起動時は必ずオフ（ボタンか声で切り替える）
         self._vc_warned = False
 
@@ -343,7 +345,9 @@ class ReadAloudWorker:
                     if self.normalize_enabled:
                         wav = normalize_wav(wav, self.target_dbfs)
                     if is_taro:
-                        self._play_taro_to_vc(wav)
+                        self._play_taro_to_vc(wav)  # VCの分はこれまでどおり（TARO_VC_VOLUME で別に調整）
+                        if self.taro_voice_volume != 100:
+                            wav = scale_wav(wav, self.taro_voice_volume)
                     self._play(wav)
             except Exception as e:
                 logger.warning(f"読み上げに失敗: {e}")

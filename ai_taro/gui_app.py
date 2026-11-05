@@ -130,7 +130,7 @@ class QueueHandler(logging.Handler):
 class BotGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("AIコメント太郎 v4.63")
+        self.root.title("AIコメント太郎 v4.64")
         self.root.geometry("820x660")
         self.root.resizable(True, True)
         self.root.configure(bg="#1a1a2e")
@@ -225,7 +225,7 @@ class BotGUI:
         header = tk.Frame(self.root, bg=self.colors["bg"], pady=10)
         header.pack(fill="x", padx=16)
 
-        tk.Label(header, text="🎮  AIコメント太郎  v4.63",
+        tk.Label(header, text="🎮  AIコメント太郎  v4.64",
                  bg=self.colors["bg"], fg=self.colors["text"],
                  font=("Yu Gothic UI", 16, "bold")).pack(side="left")
 
@@ -484,6 +484,7 @@ class BotGUI:
         self.var_taro_voice_rpm = tk.StringVar()       # v4.59
         self.var_taro_vc_device = tk.StringVar()       # v4.59
         self.var_taro_vc_volume = tk.StringVar()       # v4.59
+        self.var_taro_voice_volume = tk.StringVar()    # v4.64
         self.var_gimmick_enabled = tk.BooleanVar()
         self.var_gimmick_words = tk.StringVar()
         self.var_event_banned_words = tk.StringVar()   # v4.59
@@ -671,6 +672,8 @@ class BotGUI:
         make_note(sec4, "声にするときだけ置き換える語（チャットの文は変わらない）。「元=読み」をカンマ区切り。例: ひげさん=ヒゲさん")
         make_field(sec4, "太郎の声 1分あたりの回数", self.var_taro_voice_rpm)
         make_note(sec4, "これを超えそうなときは予備のモデルの声で作ります（0で数えない。上位版を使うときは上限1分10回なので8）")
+        make_field(sec4, "太郎の声の大きさ (%)", self.var_taro_voice_volume)
+        make_note(sec4, "視聴者コメントの読み上げと同じ大きさを100として、太郎の声だけ変えます（配信にもモニターにも効きます）。次の起動から")
         make_field(sec4, "太郎の声をVCに流す出力先", self.var_taro_vc_device)
         make_note(sec4, "VCモード中だけ、太郎の発言をこの出力先にも鳴らします（空欄なら流さない）。Wave LinkでVC用のミックスに入れておく")
         make_field(sec4, "VCに流す太郎の声の大きさ (%)", self.var_taro_vc_volume)
@@ -787,6 +790,7 @@ class BotGUI:
             self.var_taro_voice_rpm.set(str(getattr(cfg, "TARO_VOICE_MAX_PER_MINUTE", 0)))
             self.var_taro_vc_device.set(getattr(cfg, "TARO_VC_OUTPUT_DEVICE", ""))
             self.var_taro_vc_volume.set(str(getattr(cfg, "TARO_VC_VOLUME", 50)))
+            self.var_taro_voice_volume.set(str(getattr(cfg, "TARO_VOICE_VOLUME", 100)))
             self.var_gimmick_enabled.set(getattr(cfg, "GIMMICK_ENABLED", True))
             self.var_gimmick_words.set(getattr(cfg, "GIMMICK_WORDS", "行進,ランダム,おなかすいた"))
             self.var_event_banned_words.set(getattr(cfg, "EVENT_BANNED_WORDS", ""))
@@ -875,6 +879,9 @@ class BotGUI:
                 content = replace_value(content, "TARO_VOICE_MAX_PER_MINUTE", _rpm, is_string=False)
             content = replace_value(content, "TARO_VC_OUTPUT_DEVICE",
                                     self.var_taro_vc_device.get().replace('"', '').replace("'", ""))
+            _tv_vol = self.var_taro_voice_volume.get().strip()  # v4.64
+            if _tv_vol.isdigit():
+                content = replace_value(content, "TARO_VOICE_VOLUME", _tv_vol, is_string=False)
             _vc_vol = self.var_taro_vc_volume.get().strip()
             if _vc_vol.isdigit():
                 content = replace_value(content, "TARO_VC_VOLUME", _vc_vol, is_string=False)
@@ -1035,7 +1042,7 @@ class BotGUI:
             logger.info("=" * 50)
             # 起動のしかたを記録に残す（以前は常に「VCモード」と出ていて、VCを使った日と区別できなかった）
             _mode_name = "太郎＋読み上げ" if getattr(config, 'READ_ALOUD_ENABLED', False) else "太郎だけ"
-            logger.info(f"AIコメント太郎 v4.63 を「{_mode_name}」で起動します")
+            logger.info(f"AIコメント太郎 v4.64 を「{_mode_name}」で起動します")
             usage_meter.reset()  # v4.62: 料金の概算はこの起動から数える
             logger.info(f"チャンネル: #{config.CHANNEL_NAME}")
             _engine = getattr(config, 'SPEECH_ENGINE', 'whisper')
@@ -1457,7 +1464,7 @@ class BotGUI:
         Twitchの受信と読み上げ係だけを起動する。太郎はチャットに一切投稿しない。
         _run_bot の try の中から呼ばれるので、終了時の後片付け（_cleanup_bot）はそちらで行われる"""
         logger.info("=" * 50)
-        logger.info("AIコメント太郎 v4.63 を「読み上げだけ」で起動します")
+        logger.info("AIコメント太郎 v4.64 を「読み上げだけ」で起動します")
         usage_meter.reset()  # v4.62: 料金の概算はこの起動から数える
         logger.info("（AIのコメント・マイクの聞き取り・俳句/謎かけ・ギミック参加は動かしません）")
         logger.info(f"チャンネル: #{config.CHANNEL_NAME}")
